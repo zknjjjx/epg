@@ -1,0 +1,27 @@
+name: Daily EPG Update
+
+on:
+  schedule:
+    - cron: '0 17 * * *'  # 每天北京时间 01:00 (17:00 UTC)
+  workflow_dispatch:      # 允许手动触发
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update EPG data
+        run: node update.mjs
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+          PUSH_URL: ${{ secrets.PUSH_URL }}
+
+      - name: Report
+        if: failure()
+        run: echo "EPG update failed, check logs above"
