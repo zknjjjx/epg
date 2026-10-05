@@ -403,58 +403,83 @@ ${srcRows}</table>
 
 function homePage(host) {
   const subs = [
-    ['XML 节目单', '/epg.xml'],
-    ['XML 压缩包', '/epg.xml.gz'],
-    ['DIYP 格式', '/diyp.json'],
-    ['DIYP 压缩包', '/diyp.json.gz'],
-  ].map(([label, path]) => `
+    ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
+    ['XML 压缩包', '/epg.xml.gz', 'GZip 压缩，体积更小'],
+    ['DIYP 格式', '/diyp.json', 'DIYP 类播放器专用 JSON'],
+    ['DIYP 压缩包', '/diyp.json.gz', 'GZip 压缩，体积更小'],
+  ].map(([label, path, desc]) => `
     <div class="row">
-      <span class="label">${label}</span>
-      <code class="url">${host}${path}</code>
+      <div class="rowmain">
+        <span class="label">${label}</span>
+        <span class="desc">${desc}</span>
+        <code class="url">${host}${path}</code>
+      </div>
       <button class="copy" data-url="${host}${path}" onclick="copyUrl(this)">复制</button>
     </div>`).join('');
   const views = [
-    ['频道列表', '/channels.json'],
-    ['更新状态', '/meta.json'],
-    ['更新日志', '/log'],
-  ].map(([label, path]) => `
-    <div class="row">
-      <span class="label">${label}</span>
-      <a class="viewlink" href="${path}"><code class="url">${host}${path}</code></a>
-    </div>`).join('');
+    ['频道列表', '/channels.json', '全部频道及台标'],
+    ['更新状态', '/meta.json', '数据量、时间范围'],
+    ['更新日志', '/log', '每次更新记录'],
+  ].map(([label, path, desc]) => `
+    <a class="viewlink" href="${path}">
+      <div class="row">
+        <div class="rowmain">
+          <span class="label">${label} <span class="arrow">›</span></span>
+          <span class="desc">${desc}</span>
+        </div>
+      </div>
+    </a>`).join('');
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EPG 节目单服务</title>
 <style>
-body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:720px;margin:0 auto;padding:24px 16px;color:#222;background:#f7f8fa}
-h1{font-size:22px}.card{background:#fff;border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap}
+*{box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;max-width:680px;margin:0 auto;padding:28px 16px 40px;color:#1d1d1f;background:linear-gradient(180deg,#eef2ff 0%,#f7f8fa 220px)}
+h1{font-size:24px;margin:6px 0 4px;letter-spacing:.5px}
+.sub{color:#6b7280;font-size:13px;line-height:1.9;margin:0 0 18px}
+.sub a{color:#2563eb;text-decoration:none;border-bottom:1px dashed #93c5fd}
+.sub a:hover{border-bottom-style:solid}
+.card{background:#fff;border-radius:16px;padding:6px 18px;margin:14px 0;box-shadow:0 2px 12px rgba(30,64,175,.07)}
+.card h3{font-size:15px;margin:14px 0 4px;color:#111827}
+.row{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid #f1f5f9}
 .row:last-child{border-bottom:none}
-.label{font-weight:600;min-width:88px}
-.url{flex:1;word-break:break-all;background:#f2f4f7;padding:6px 8px;border-radius:6px;font-size:12px}
-.copy{border:1px solid #1677ff;color:#1677ff;background:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;flex-shrink:0}
-.copy:active{background:#e6f0ff}
-.viewlink{flex:1;text-decoration:none}
-.viewlink .url{display:block;cursor:pointer}
-.viewlink .url:hover{background:#e6f0ff}
-.hint{color:#888;font-size:13px}
-#toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:8px;display:none;font-size:14px}
-.api{background:#f2f4f7;padding:10px;border-radius:8px;font-size:13px;word-break:break-all}
+.rowmain{flex:1;min-width:0}
+.label{font-weight:700;font-size:15px;display:block}
+.desc{font-size:12px;color:#9ca3af;display:block;margin:2px 0 6px}
+.url{display:block;word-break:break-all;background:#f3f4f6;padding:7px 10px;border-radius:8px;font-size:12px;color:#374151;font-family:ui-monospace,Menlo,monospace}
+.copy{border:1.5px solid #2563eb;color:#2563eb;background:#eff6ff;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;transition:all .15s}
+.copy:active{background:#2563eb;color:#fff;transform:scale(.96)}
+a.viewlink{text-decoration:none;color:inherit;display:block}
+a.viewlink .row{cursor:pointer;border-radius:10px;transition:background .15s}
+a.viewlink:hover .row{background:#f8fafc}
+.arrow{color:#c7cdd6;font-weight:400}
+.api{margin:12px 0 16px;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:12px 14px;font-size:13px}
+.api .t{font-weight:700;margin-bottom:8px;display:block}
+.api code{display:block;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px;word-break:break-all;color:#1f2937;font-family:ui-monospace,Menlo,monospace}
+.api .ex{color:#6b7280;font-size:12px}
+#toast{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 22px;border-radius:999px;display:none;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:99}
+.badge{display:inline-block;font-size:11px;background:#ecfdf5;color:#047857;border-radius:999px;padding:2px 10px;margin-left:8px;vertical-align:2px;font-weight:600}
 </style></head><body>
-<h1>📺 EPG 节目单服务</h1>
-<p class="hint">每天北京时间凌晨 1 点自动更新 · 数据源：TvWasm/autoEPG（官方）+ 51zmt + 112114</p>
-<div class="card"><h3>订阅地址（点复制）</h3>${subs}
-<p class="hint" style="margin-top:10px">DIYP 查询接口：<span class="api">/api/diyp?ch=频道名&date=YYYYMMDD</span><br>例如 <span class="api">/api/diyp?ch=CCTV1&date=20261006</span></p></div>
+<h1>📺 EPG 节目单服务<span class="badge">每天 01:00 更新</span></h1>
+<p class="sub">数据源：
+<a href="https://github.com/TvWasm/autoEPG" target="_blank">TvWasm/autoEPG</a>（官方）
+＋ <a href="https://epg.51zmt.top:8001/" target="_blank">51zmt</a>
+＋ <a href="https://epg.112114.xyz/" target="_blank">112114</a>
+<br>回看 7 天 · 预告未来 3 天 · 533 个频道</p>
+<div class="card"><h3>订阅地址</h3>${subs}
+<div class="api"><span class="t">DIYP 查询接口</span>
+<code>/api/diyp?ch=频道名&amp;date=YYYYMMDD</code>
+<span class="ex">例如：</span>
+<code>/api/diyp?ch=CCTV1&amp;date=20261006</code>
+</div></div>
 <div class="card"><h3>查看</h3>${views}</div>
-<div class="card"><h3>使用说明</h3>
-<p class="hint">XMLTV 格式适用于 TiviMate、IPTV Pro、Kodi 等播放器；DIYP 格式适用于 DIYP 类播放器。<br>回看 7 天，预告未来 3 天。</p></div>
-<div id="toast">已复制</div>
+<div id="toast">已复制 ✓</div>
 <script>
 function copyUrl(btn){
-  var url = btn.getAttribute('data-url');
-  function done(){var t=document.getElementById('toast');t.style.display='block';setTimeout(function(){t.style.display='none'},1200);}
+  var url=btn.getAttribute('data-url');
+  function done(){var t=document.getElementById('toast');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(function(){t.style.display='none'},1300);}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(done).catch(function(){fallback();});}
   else fallback();
-  function fallback(){var ta=document.createElement('textarea');ta.value=url;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);}
+  function fallback(){var ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);}
 }
 </script>
 </body></html>`;
