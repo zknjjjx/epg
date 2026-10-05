@@ -322,7 +322,7 @@ async function update(env) {
   return meta;
 }
 
-function logPage(host, logs) {
+function logPage(host, logs, actions) {
   const latest = logs[0];
   const srcRows = latest ? latest.sources.map(s => `
     <tr>
@@ -335,14 +335,22 @@ function logPage(host, logs) {
       <td>${esc(s.days || '-')}</td>
       <td>${s.error ? '<span class="bad">' + esc(s.error) + '</span>' : (s.histOk ? '历史 ' + esc(s.histOk) + ' 天' : '-')}</td>
     </tr>`).join('') : '<tr><td colspan="8">暂无更新记录</td></tr>';
-  const histRows = logs.map(l => `
+  const runRows = (actions || []).map(a => {
+    const at = new Date(a.time).getTime();
+    const match = logs.find(l => {
+      const lt = new Date(l.time).getTime();
+      return lt >= at - 60000 && lt <= at + 15 * 60000;
+    });
+    const ok = a.status === 'success';
+    return `
     <tr>
-      <td>${esc(l.time.replace('T', ' ').slice(0, 19))} UTC</td>
-      <td>${(l.durationMs / 1000).toFixed(0)}s</td>
-      <td>${l.channels}</td>
-      <td>${l.programmes.toLocaleString()}</td>
-      <td>${l.errors.length ? '<span class="bad">' + esc(l.errors[0]).slice(0, 60) + '</span>' : '<span class="ok">无</span>'}</td>
-    </tr>`).join('');
+      <td>${esc(a.time.replace('T', ' ').slice(0, 19))} UTC</td>
+      <td>${ok ? '<span class="ok">成功</span>' : '<span class="bad">' + esc(a.status) + '</span>'}</td>
+      <td>${match ? match.channels : '-'}</td>
+      <td>${match ? match.programmes.toLocaleString() : '-'}</td>
+      <td>${a.url ? `<a href="${esc(a.url)}" target="_blank">查看运行</a>` : '-'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5">暂无运行记录</td></tr>';
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>更新日志 - EPG</title>
 <style>
@@ -355,13 +363,14 @@ th{color:#888;font-weight:600}
 .hint{color:#888;font-size:13px}a{color:#1677ff}
 </style></head><body>
 <h1>📋 更新日志</h1>
-<p class="hint"><a href="/">← 返回首页</a> · 每天北京时间凌晨 1 点自动更新 · 保留最近 30 次</p>
+<p class="hint"><a href="/">← 返回首页</a> · 每天北京时间凌晨 1 点自动更新（GitHub Actions）· 保留最近 30 次</p>
+<div class="card"><h3>定时任务运行记录</h3>
+<table><tr><th>运行时间</th><th>状态</th><th>频道</th><th>节目</th><th>详情</th></tr>${runRows}</table>
+<p class="hint">状态来自 GitHub Actions；失败时频道/节目显示为 -，点"查看运行"看具体报错。</p></div>
 <div class="card"><h3>最新一次（${latest ? esc(latest.time.replace('T', ' ').slice(0, 19)) + ' UTC' : '-'}）数据源详情</h3>
 <table><tr><th>数据源</th><th>状态</th><th>抓取耗时</th><th>解析节目数</th><th>有效节目数</th><th>覆盖频道</th><th>数据日期</th><th>备注</th></tr>
 ${srcRows}</table>
 <p class="hint">解析节目数 = 从该源抓到的原始条数；有效节目数 = 去重合并后最终采用的条数（后抓取的源会覆盖先抓取的同名节目）。</p></div>
-<div class="card"><h3>历史更新</h3>
-<table><tr><th>更新时间</th><th>耗时</th><th>频道</th><th>节目</th><th>错误</th></tr>${histRows}</table></div>
 </body></html>`;
 }
 
@@ -467,12 +476,13 @@ export default {
     if (p === '/channels.json') return serveR2(env, 'channels.json', 'application/json; charset=utf-8');
     if (p === '/meta.json') return serveR2(env, 'meta.json', 'application/json; charset=utf-8');
     if (p === '/log.json') return serveR2(env, 'logs.json', 'application/json; charset=utf-8');
+    if (p === '/actions.json') return serveR2(env, 'actions.json', 'application/json; charset=utf-8');
     if (p === '/push' && req.method === 'POST') {
       // VM-side updater pushes generated files here (free plan: keep Worker CPU minimal)
       const token = url.searchParams.get('token');
       const key = url.searchParams.get('key');
       const expected = env.UPDATE_TOKEN;
-      const allowed = ['epg.xml', 'epg.xml.gz', 'diyp.json', 'diyp.json.gz', 'channels.json', 'meta.json', 'logs.json'];
+      const allowed = ['epg.xml', 'epg.xml.gz', 'diyp.json', 'diyp.json.gz', 'channels.json', 'meta.json', 'logs.json', 'actions.json'];
       if (!expected || token !== expected) return new Response('forbidden', { status: 403 });
       if (!allowed.includes(key)) return new Response('bad key', { status: 400 });
       const ct = key.endsWith('.gz') ? 'application/gzip' : key.endsWith('.json') ? 'application/json; charset=utf-8' : 'application/xml; charset=utf-8';
@@ -480,12 +490,14 @@ export default {
       return new Response('ok', { status: 200 });
     }
     if (p === '/log') {
-      let logs = [];
+      let logs = [], actions = [];
       try {
-        const obj = await env.EPG_BUCKET.get('logs.json');
-        if (obj) logs = JSON.parse(await obj.text());
+        const o1 = await env.EPG_BUCKET.get('logs.json');
+        if (o1) logs = JSON.parse(await o1.text());
+        const o2 = await env.EPG_BUCKET.get('actions.json');
+        if (o2) actions = JSON.parse(await o2.text());
       } catch (e) { /* none yet */ }
-      return new Response(logPage(host, logs), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      return new Response(logPage(host, logs, actions), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
     if (p === '/api/diyp') return diypQuery(env, url);
     return new Response('not found', { status: 404 });
