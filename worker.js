@@ -27,6 +27,14 @@ function bjDate(ms) {
 function bjHM(ms) {
   return new Date(ms + BJ).toISOString().slice(11, 16);
 }
+function bjTimeStr(iso) {
+  // "2026-10-05T19:21:11Z" -> "2026-10-06 03:21:11" (Beijing)
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  const b = new Date(d.getTime() + BJ);
+  const p = n => String(n).padStart(2, '0');
+  return `${b.getUTCFullYear()}-${p(b.getUTCMonth() + 1)}-${p(b.getUTCDate())} ${p(b.getUTCHours())}:${p(b.getUTCMinutes())}:${p(b.getUTCSeconds())}`;
+}
 
 // Parse XMLTV with regex (streaming-friendly enough for our sizes)
 function parseXMLTV(xml, aliasOf) {
@@ -344,7 +352,7 @@ function logPage(host, logs, actions) {
     const ok = a.status === 'success';
     return `
     <tr>
-      <td>${esc(a.time.replace('T', ' ').slice(0, 19))} UTC</td>
+      <td>${esc(bjTimeStr(a.time))}</td>
       <td>${ok ? '<span class="ok">成功</span>' : '<span class="bad">' + esc(a.status) + '</span>'}</td>
       <td>${match ? match.channels : '-'}</td>
       <td>${match ? match.programmes.toLocaleString() : '-'}</td>
@@ -367,7 +375,7 @@ th{color:#888;font-weight:600}
 <div class="card"><h3>定时任务运行记录</h3>
 <table><tr><th>运行时间</th><th>状态</th><th>频道</th><th>节目</th><th>详情</th></tr>${runRows}</table>
 <p class="hint">状态来自 GitHub Actions；失败时频道/节目显示为 -，点"查看运行"看具体报错。</p></div>
-<div class="card"><h3>最新一次（${latest ? esc(latest.time.replace('T', ' ').slice(0, 19)) + ' UTC' : '-'}）数据源详情</h3>
+<div class="card"><h3>最新一次（${latest ? esc(bjTimeStr(latest.time)) : '-'}）数据源详情</h3>
 <table><tr><th>数据源</th><th>状态</th><th>抓取耗时</th><th>解析节目数</th><th>有效节目数</th><th>覆盖频道</th><th>数据日期</th><th>备注</th></tr>
 ${srcRows}</table>
 <p class="hint">解析节目数 = 从该源抓到的原始条数；有效节目数 = 去重合并后最终采用的条数（后抓取的源会覆盖先抓取的同名节目）。</p></div>
