@@ -156,7 +156,7 @@ async function update(env) {
 
   // ---- 2. Merge programmes: 51zmt -> 112114 -> autoEPG (later wins) ----
   const progMap = new Map(); // key: chId|startMs -> {ch, start, stop, title, src}
-  const putProg = (rawCh, startStr, stopStr, title, src) => {
+  const putProg = (rawCh, startStr, stopStr, title, src, pri) => {
     if (!title) return;
     const ch = ensureChannel(rawCh);
     const start = parseStart(startStr);
@@ -164,7 +164,7 @@ async function update(env) {
     let stop = stopStr ? parseStart(stopStr) : null;
     if (stop == null || stop <= start) stop = start + 30 * 60000;
     noteParsed(src, start);
-    progMap.set(ch + '|' + start, { ch, start, stop, title, src });
+    progMap.set(ch + '|' + start, { ch, start, stop, title, src, pri });
   };
 
   // 2a. 51zmt (2 days, CCTV + 卫视)
@@ -176,7 +176,7 @@ async function update(env) {
     const chNames = {};
     for (const it of items) {
       if (it.type === 'channel') chNames[it.id] = it.name;
-      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '51zmt');
+      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '51zmt', 1);
     }
   } catch (e) { stat('51zmt').error = e.message; errors.push('51zmt: ' + e.message); }
 
@@ -189,7 +189,7 @@ async function update(env) {
     const chNames = {};
     for (const it of items) {
       if (it.type === 'channel') chNames[it.id] = it.name;
-      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '112114');
+      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '112114', 2);
     }
   } catch (e) { stat('112114').error = e.message; errors.push('112114: ' + e.message); }
 
@@ -204,7 +204,7 @@ async function update(env) {
     const items = parseXMLTV(await fetchText(SRC.epg3, 120000), aliasOf);
     stat('autoEPG').fetchMs = Date.now() - t0;
     stat('autoEPG').ok = true;
-    for (const it of items) if (it.type === 'prog') putProg(it.ch, it.start, it.stop, it.title, 'autoEPG');
+    for (const it of items) if (it.type === 'prog') putProg(it.ch, it.start, it.stop, it.title, 'autoEPG', 3);
   } catch (e) { stat('autoEPG').error = e.message; errors.push('autoEPG epg3: ' + e.message); }
   const histDates = dates.filter(d => d !== bjToday);
   const settled = await Promise.allSettled(histDates.map(d => fetchText(SRC.hist(d), 60000)));
@@ -214,7 +214,7 @@ async function update(env) {
     if (r.status !== 'fulfilled') { errors.push('hist ' + histDates[i] + ': ' + (r.reason && r.reason.message)); continue; }
     try {
       const items = parseXMLTV(r.value, aliasOf);
-      for (const it of items) if (it.type === 'prog') putProg(it.ch, it.start, it.stop, it.title, 'autoEPG');
+      for (const it of items) if (it.type === 'prog') putProg(it.ch, it.start, it.stop, it.title, 'autoEPG', 3);
       histOk++;
     } catch (e) { errors.push('hist parse ' + histDates[i] + ': ' + e.message); }
   }
@@ -228,6 +228,25 @@ async function update(env) {
     if (p.start >= winStart && p.start < winEnd) progs.push(p);
   }
   progs.sort((a, b) => a.ch.localeCompare(b.ch) || a.start - b.start);
+  // Second dedup: same channel + start within 2 min + same title -> keep higher-priority source
+  // (look back up to 10 entries: a different-titled programme may sit between near-duplicates)
+  const deduped = [];
+  for (const p of progs) {
+    let dupIdx = -1;
+    for (let i = deduped.length - 1; i >= 0 && i >= deduped.length - 10; i--) {
+      const q = deduped[i];
+      if (q.ch !== p.ch) break;
+      if (Math.abs(q.start - p.start) >= 120000) break;
+      if (norm(q.title) === norm(p.title)) { dupIdx = i; break; }
+    }
+    if (dupIdx >= 0) {
+      if ((p.pri || 0) >= (deduped[dupIdx].pri || 0)) deduped[dupIdx] = p;
+    } else {
+      deduped.push(p);
+    }
+  }
+  progs.length = 0;
+  progs.push(...deduped);
   const usedCh = new Set(progs.map(p => p.ch));
 
   // ---- 4. Build XMLTV ----
