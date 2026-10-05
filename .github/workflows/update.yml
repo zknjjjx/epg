@@ -22,6 +22,24 @@ jobs:
           UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
           PUSH_URL: ${{ secrets.PUSH_URL }}
 
-      - name: Report
-        if: failure()
-        run: echo "EPG update failed, check logs above"
+  report:
+    needs: update
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report run status to log
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+          PUSH_URL: ${{ secrets.PUSH_URL }}
+          RUN_STATUS: ${{ needs.update.result }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NEW=$(jq -n --arg t "$TIME" --arg s "$RUN_STATUS" --arg u "$RUN_URL" \
+            '{time:$t, status:$s, url:$u}')
+          BASE="${PUSH_URL%/push}"
+          curl -sf "$BASE/actions.json" -o /tmp/a.json 2>/dev/null || echo '[]' > /tmp/a.json
+          jq --argjson n "$NEW" '[$n] + . | .[0:30]' /tmp/a.json > /tmp/a2.json
+          curl -sf -X POST "$PUSH_URL?token=$UPDATE_TOKEN&key=actions.json" \
+            -H 'Content-Type: application/json' --data-binary @/tmp/a2.json \
+            && echo "reported: $RUN_STATUS"
