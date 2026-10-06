@@ -150,7 +150,6 @@ GitHub Actions 设为每小时触发一次，update.mjs 启动时读取计划，
 失败记录写入日志，下个整点自动重试。单个源失效是正常的（/log 里能看到哪个源挂了），
 只要有一个源成功就按正常计划走，不会提前重试。
 
-> 注意：`.github/workflows/update.yml` 的 cron 需设为每小时：`0 * * * *`（GitHub App 无权改 workflow 文件，需手动改）。
 
 ---
 
@@ -192,8 +191,6 @@ A: `/log` 页面会显示每个源的状态（正常/失败）和报错。去 `/
 **Q: 播放器里部分频道没节目单？**
 A: 频道名对不上。XMLTV 用 `<display-name>` 匹配，DIYP 用频道名查询。把对不上的台名记下来，可以提 Issue。
 
-**Q: DIYP 在播放器里卡死？**
-A: 确认填的是接口地址 `https://你的域名/d`，**不要**填 `diyp.json` 整包文件。播放器会自动拼接 `?ch=频道名&date=日期` 查询。
 
 **Q: 想换 workers.dev 域名？**
 A: Worker → 设置 → 域和路由里管理。记得同步改 GitHub 的 `PUSH_URL` Secret。
