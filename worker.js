@@ -246,7 +246,7 @@ async function update(env) {
     }
   }
   progs.length = 0;
-  progs.push(...deduped);
+  for (let i = 0; i < deduped.length; i++) progs.push(deduped[i]);
   const usedCh = new Set(progs.map(p => p.ch));
 
   // ---- 4. Build XMLTV ----
@@ -463,7 +463,8 @@ a.viewlink:hover .row{background:#f8fafc}
 <a href="https://github.com/TvWasm/autoEPG" target="_blank">TvWasm/autoEPG</a>（官方）
 ＋ <a href="https://epg.51zmt.top:8001/" target="_blank">51zmt</a>
 ＋ <a href="https://epg.112114.xyz/" target="_blank">112114</a>
-<br>回看 7 天 · 预告未来 3 天 · 533 个频道</p>
+＋ v1.mk ＋ epg.pw ＋ zsdc ＋ kuke31 ＋ liliu 等共 9 个源
+<br>回看 7 天 · 预告未来 3 天</p>
 <div class="card"><h3>订阅地址</h3>${subs}
 <div class="api"><span class="t">DIYP 接口说明</span>
 <span class="ex">播放器 EPG 地址栏填：</span>
