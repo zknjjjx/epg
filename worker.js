@@ -658,8 +658,7 @@ function sourcesToText(list) {
   return list.map(s => `${s.name}|${s.url}|${s.priority}`).join('\n') + '\n';
 }
 
-export default {
-  async fetch(req, env, ctx) {
+export async function handleRequest(req, env) {
     const url = new URL(req.url);
     const p = url.pathname;
     const host = url.origin;
@@ -735,5 +734,10 @@ export default {
     }
     if (p === '/api/diyp' || p === '/d') return diypQuery(env, url);
     return new Response('not found', { status: 404 });
+}
+
+export default {
+  async fetch(req, env, ctx) {
+    return handleRequest(req, env);
   },
 };
