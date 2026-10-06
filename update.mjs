@@ -173,27 +173,37 @@ function fmtT(ms) {
   return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())} +0800`;
 }
 
-async function fetchText(url, timeoutMs = 60000) {
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchOnce(url, timeoutMs, asText) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const r = await fetch(url, { signal: ctl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.text();
+    return asText ? await r.text() : await r.arrayBuffer();
   } finally { clearTimeout(t); }
 }
 
+// Retry up to 3 times with backoff — helps with flaky proxy/VPN tunnels
+async function fetchRetry(url, timeoutMs, asText, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try { return await fetchOnce(url, timeoutMs, asText); }
+    catch (e) { lastErr = e; if (i < tries - 1) await sleep(3000 * (i + 1)); }
+  }
+  throw lastErr;
+}
+
+async function fetchText(url, timeoutMs = 60000) {
+  return fetchRetry(url, timeoutMs, true);
+}
+
 async function fetchGzipText(url, timeoutMs = 90000) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, { signal: ctl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const buf = await r.arrayBuffer();
-    const ds = new DecompressionStream('gzip');
-    const text = await new Response(new Blob([buf]).stream().pipeThrough(ds)).text();
-    return text;
-  } finally { clearTimeout(t); }
+  const buf = await fetchRetry(url, timeoutMs, false);
+  const ds = new DecompressionStream('gzip');
+  const text = await new Response(new Blob([buf]).stream().pipeThrough(ds)).text();
+  return text;
 }
 
 async function gzipBytes(str) {
