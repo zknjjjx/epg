@@ -451,7 +451,7 @@ input:focus{outline:none;border-color:#2563eb}
   <input type="password" id="pwd" placeholder="管理密码（与推送密钥相同）" onkeydown="if(event.key==='Enter')doLogin()">
   <div class="err" id="loginErr"></div>
   <button class="btn-login" onclick="doLogin()">登录</button>
-  <p class="hint">密码即 Worker 的 UPDATE_TOKEN 密钥，Cloudflare 后台可查。</p>
+  <p class="hint">密码为 Worker 变量 ADMIN_PASSWORD（Cloudflare 后台设置，明文可见）。</p>
 </div>
 <div id="mainUI" style="display:none">
   <div class="card"><h3 style="margin:4px 0">当前数据源 <span class="hint" id="cnt"></span></h3><div id="list"></div></div>
@@ -707,7 +707,8 @@ export default {
     if (p === '/admin/api' && req.method === 'POST') {
       let body = {};
       try { body = await req.json(); } catch (e) { return new Response('bad json', { status: 400 }); }
-      if (!env.UPDATE_TOKEN || body.password !== env.UPDATE_TOKEN) {
+      const adminPwd = env.ADMIN_PASSWORD || env.UPDATE_TOKEN;
+      if (!adminPwd || body.password !== adminPwd) {
         return new Response(JSON.stringify({ ok: false, error: '密码错误' }), { headers: { 'Content-Type': 'application/json' } });
       }
       if (body.action === 'get') {
