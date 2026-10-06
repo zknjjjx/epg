@@ -48,15 +48,16 @@ const SRC = {
 const SOURCES_URL = 'https://epg.cc.cd/sources.txt';
 
 function parseSourceList(text) {
-  // lines: name|url|priority  (# comments and blank lines skipped)
+  // entries: name|url|priority — one per line, but also tolerates space-separated
+  // (# comments and blank lines skipped; urls contain no spaces so this is safe)
   const out = [];
-  for (const raw of String(text || '').split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const parts = line.split('|').map(s => s.trim());
-    if (parts.length < 2 || !parts[1].startsWith('http')) continue;
-    const pri = parseInt(parts[2], 10);
-    out.push([parts[0] || ('src' + (out.length + 1)), parts[1], pri >= 1 && pri <= 3 ? pri : 2]);
+  const re = /([^\s|#][^\s|]*)\|(https?:\/\/[^\s|]+)(?:\|([123]))?/g;
+  const src = String(text || '');
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const lineStart = src.lastIndexOf('\n', m.index - 1) + 1;
+    if (src.slice(lineStart, m.index).trimStart().startsWith('#')) continue;
+    out.push([m[1].trim(), m[2].trim(), m[3] ? parseInt(m[3], 10) : 2]);
   }
   return out;
 }
