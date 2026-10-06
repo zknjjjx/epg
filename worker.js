@@ -553,7 +553,31 @@ function saveAll(){
 </script></body></html>`;
 }
 
-function homePage(host) {
+async function nextUpdateStr(env) {
+  const s = await getSettings(env);
+  let lastRun = 0;
+  try {
+    const o = await env.EPG_BUCKET.get('meta.json');
+    if (o) lastRun = new Date(JSON.parse(await o.text()).updatedAt).getTime() || 0;
+  } catch (e) { /* none yet */ }
+  const now = Date.now();
+  if (s.mode === 'interval') {
+    const next = lastRun + s.intervalHours * 3600000;
+    if (!lastRun || next <= now) return '即将更新';
+    const bj = new Date(next + BJ);
+    return '下次 ' + bj.toISOString().slice(5, 16).replace('T', ' ') + ' 更新';
+  }
+  const bjNow = new Date(now + BJ);
+  const today = bjNow.toISOString().slice(0, 10);
+  const lastDay = lastRun ? new Date(lastRun + BJ).toISOString().slice(0, 10) : '';
+  const hm = String(s.dailyTime || '01:00');
+  const [hh, mm] = hm.split(':').map(Number);
+  const nowMins = bjNow.getUTCHours() * 60 + bjNow.getUTCMinutes();
+  if (lastDay === today) return '下次 明天 ' + hm + ' 更新';
+  if (nowMins < hh * 60 + mm) return '下次 今天 ' + hm + ' 更新';
+  return '即将更新';
+}
+function homePage(host, nextStr) {
   const subs = [
     ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
     ['XML 压缩包', '/epg.xml.gz', 'GZip 压缩，体积更小'],
@@ -613,7 +637,7 @@ a.viewlink:hover .row{background:#f8fafc}
 .gear{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(30,64,175,.08);text-decoration:none;font-size:20px;flex-shrink:0}
 .gear:hover{background:#f1f5f9}
 </style></head><body>
-<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">每天 01:00 更新</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
+<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">${esc(nextStr || '定时更新')}</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
 <p class="sub">回看 7 天 · 预告未来 3 天</p>
 <div class="card"><h3>订阅地址</h3>${subs}
 </div>
@@ -715,7 +739,10 @@ export async function handleRequest(req, env) {
     const url = new URL(req.url);
     const p = url.pathname;
     const host = url.origin;
-    if (p === '/') return new Response(homePage(host), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    if (p === '/') {
+      const nextStr = await nextUpdateStr(env).catch(() => '');
+      return new Response(homePage(host, nextStr), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
     if (p === '/epg.xml') return serveR2(env, 'epg.xml', 'application/xml; charset=utf-8');
     if (p === '/epg.xml.gz') return serveR2(env, 'epg.xml.gz', 'application/gzip');
     if (p === '/diyp.json') return serveR2(env, 'diyp.json', 'application/json; charset=utf-8');
