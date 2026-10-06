@@ -215,7 +215,40 @@ async function gzipBytes(str) {
   return new Uint8Array(buf);
 }
 
+// ---- Schedule check: GitHub cron runs hourly; only do real work when due ----
+// Settings from https://epg.cc.cd/settings.json (admin UI), default daily 01:00 Beijing
+async function shouldRun() {
+  let s = { mode: 'daily', dailyTime: '01:00', intervalHours: 6 };
+  try {
+    const r = await fetch('https://epg.cc.cd/settings.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (r.ok) s = { ...s, ...(await r.json()) };
+  } catch (e) { console.log('  settings: using default (daily 01:00)'); }
+  let lastRun = 0;
+  try {
+    const r = await fetch('https://epg.cc.cd/meta.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (r.ok) lastRun = new Date((await r.json()).updatedAt).getTime() || 0;
+  } catch (e) { /* first run */ }
+
+  const now = Date.now();
+  if (s.mode === 'interval') {
+    const h = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6));
+    if (now - lastRun >= h * 3600000) return true;
+    console.log(`  schedule: skip (last run ${((now - lastRun) / 3600000).toFixed(1)}h ago, every ${h}h)`);
+    return false;
+  }
+  // daily mode: run once per Beijing day, at/after dailyTime; a failed run retries next hour
+  const bj = new Date(now + BJ);
+  const [hh, mm] = String(s.dailyTime || '01:00').split(':').map(Number);
+  const today = bj.toISOString().slice(0, 10);
+  const lastDay = new Date(lastRun + BJ).toISOString().slice(0, 10);
+  const pastTime = bj.getUTCHours() * 60 + bj.getUTCMinutes() >= hh * 60 + mm;
+  if (pastTime && lastDay !== today) return true;
+  console.log(`  schedule: skip (daily ${s.dailyTime} Beijing, last run ${lastDay})`);
+  return false;
+}
+
 async function update() {
+  if (!(await shouldRun())) { console.log('SKIPPED by schedule'); return; }
   const started = Date.now();
   const errors = [];
   const srcStats = {}; // name -> {name, ok, fetchMs, parsed, merged, dayMin, dayMax, error}
@@ -499,6 +532,7 @@ ${srcRows}</table>
 const t0 = Date.now();
 try {
   const meta = await update();
+  if (!meta) { console.log('SKIPPED, exiting 0'); process.exit(0); }
   console.log(`DONE in ${((Date.now()-t0)/1000).toFixed(0)}s | channels=${meta.channels} programmes=${meta.programmes}`);
   if (meta.errors.length) { console.log('ERRORS:'); for (const e of meta.errors) console.log('  -', e); }
 } catch (e) {
