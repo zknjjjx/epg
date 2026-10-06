@@ -212,14 +212,15 @@ A: Worker → 设置 → 域和路由里管理。记得同步改 GitHub 的 `PUS
 docker run -d \
   --name epg \
   --restart unless-stopped \
-  --network host \
+  -p 8080:8080 \
   -v ./data:/data \
   -e ADMIN_PASSWORD=你的密码 \
   ghcr.io/zknjjjx/epg:latest
 ```
 
-> 软路由/NAS 上建议用 `--network host`（已在上方命令中）：容器与主机共用网络栈，
-> 出站抓取走主机相同的代理/分流规则，比桥接模式更可靠，且无需 `-p` 端口映射。
+> **网络要求**：部分数据源（如 `raw.githubusercontent.com`、GitHub 相关的 autoEPG）
+> 在国内直连可能失败，需要科学上网环境。请确保容器所在网络能访问这些域名，
+> 否则对应源会抓取失败（单个源失败不影响其他源，系统会按计划正常更新）。
 > 若 8080 端口被占用，加 `-e PORT=其它端口` 即可。
 
 或用 `docker-compose.yml`（已在仓库中，改好密码后 `docker-compose up -d`）。
