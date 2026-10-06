@@ -370,7 +370,7 @@ async function update() {
     diypGzipBytes: gzDiyp.length,
     rangeStart: progs.length ? new Date(progs[0].start).toISOString() : null,
     rangeEnd: progs.length ? new Date(progs[progs.length - 1].start).toISOString() : null,
-    sources: ['TvWasm/autoEPG', '51zmt', '112114'],
+    sources: ['TvWasm/autoEPG', ...srcList.map(s => s[0])],
     errors,
   };
   await pushFile('meta.json', JSON.stringify(meta, null, 2), 'application/json; charset=utf-8');
