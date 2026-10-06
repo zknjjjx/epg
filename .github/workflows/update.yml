@@ -2,7 +2,7 @@ name: Daily EPG Update
 
 on:
   schedule:
-    - cron: '0 17 * * *'  # 每天北京时间 01:00 (17:00 UTC)
+    - cron: '0 * * * *'  # 每小时触发，由 update.mjs 按管理后台的计划决定是否执行
   workflow_dispatch:      # 允许手动触发
 
 jobs:
