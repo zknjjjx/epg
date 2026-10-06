@@ -1,0 +1,6 @@
+.git
+.github
+README.md
+data
+*.log
+.update_token
