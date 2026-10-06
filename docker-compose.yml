@@ -3,8 +3,7 @@ services:
     image: ghcr.io/zknjjjx/epg:latest
     container_name: epg
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    network_mode: host   # 软路由/NAS 推荐 host 模式：与主机共用网络，走相同的代理/分流规则
     volumes:
       - ./data:/data
     environment:
