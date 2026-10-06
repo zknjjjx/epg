@@ -464,6 +464,22 @@ input:focus{outline:none;border-color:#2563eb}
     <button class="btn-add" onclick="addSrc()">＋ 添加</button>
     <p class="hint">优先级：1=低（先抓取，易被覆盖），3=高（官方源，后抓取覆盖其他）。gzip 会自动识别（.gz 结尾或 type=gz）。改完点下方保存，GitHub 第二天凌晨自动生效。</p>
   </div>
+  <div class="card"><h3 style="margin:4px 0">⏰ 更新计划</h3>
+    <div class="row">
+      <label style="font-size:14px"><input type="radio" name="smode" value="daily" id="mDaily" onchange="modeChange()"> 每天定时</label>
+      <input type="time" id="dailyTime" value="01:00" style="width:110px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
+      <span class="hint">（北京时间）</span>
+    </div>
+    <div class="row">
+      <label style="font-size:14px"><input type="radio" name="smode" value="interval" id="mInterval" onchange="modeChange()"> 每隔</label>
+      <input type="number" id="intervalHours" value="6" min="1" max="24" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
+      <span class="hint">小时跑一次</span>
+    </div>
+    <button class="btn-add" onclick="saveSettings()">💾 保存计划</button>
+    <div class="okmsg" id="setOk">已保存 ✓</div>
+    <div class="err" id="setErr"></div>
+    <p class="hint">GitHub 每小时检查一次，到点才真正抓取。某次失败的话，下个整点会自动重试，不会空一整天。</p>
+  </div>
   <div style="text-align:center;margin:16px 0">
     <button class="btn-save" onclick="saveAll()">💾 保存全部</button>
     <div class="okmsg" id="saveOk">已保存 ✓</div>
@@ -479,7 +495,7 @@ function api(action, extra){
 function doLogin(){
   _pwd = document.getElementById('pwd').value;
   api('get').then(function(d){
-    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); }
+    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); loadSettings(); }
     else { var e=document.getElementById('loginErr'); e.textContent=d.error||'登录失败'; e.style.display='block'; }
   });
 }
@@ -507,6 +523,25 @@ function addSrc(){
   _list.push({name:n||('src'+(_list.length+1)), url:u, priority:p});
   document.getElementById('nName').value=''; document.getElementById('nUrl').value='';
   render();
+}
+function loadSettings(){
+  api('get_settings').then(function(d){
+    if(d.ok && d.settings){
+      var s=d.settings;
+      document.getElementById('mDaily').checked = s.mode!=='interval';
+      document.getElementById('mInterval').checked = s.mode==='interval';
+      document.getElementById('dailyTime').value = s.dailyTime||'01:00';
+      document.getElementById('intervalHours').value = s.intervalHours||6;
+    }
+  });
+}
+function modeChange(){}
+function saveSettings(){
+  var mode = document.getElementById('mInterval').checked ? 'interval' : 'daily';
+  api('save_settings',{settings:{mode:mode, dailyTime:document.getElementById('dailyTime').value, intervalHours:parseInt(document.getElementById('intervalHours').value,10)}}).then(function(d){
+    if(d.ok){ var e=document.getElementById('setOk'); e.style.display='block'; setTimeout(function(){e.style.display='none';},2000); }
+    else { var x=document.getElementById('setErr'); x.textContent=d.error||'保存失败'; x.style.display='block'; }
+  });
 }
 function saveAll(){
   api('save',{sources:_list}).then(function(d){
@@ -638,6 +673,21 @@ function parseSourceText(text) {
   return out;
 }
 function defaultSources() { return parseSourceText(DEFAULT_SOURCES); }
+const DEFAULT_SETTINGS = { mode: 'daily', dailyTime: '01:00', intervalHours: 6 };
+async function getSettings(env) {
+  try {
+    const o = await env.EPG_BUCKET.get('settings.json');
+    if (o) {
+      const s = JSON.parse(await o.text());
+      return {
+        mode: s.mode === 'interval' ? 'interval' : 'daily',
+        dailyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.dailyTime || '') ? s.dailyTime : '01:00',
+        intervalHours: Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)),
+      };
+    }
+  } catch (e) { /* fall through */ }
+  return { ...DEFAULT_SETTINGS };
+}
 async function getSources(env) {
   try {
     const o = await env.EPG_BUCKET.get('sources.json');
@@ -695,6 +745,12 @@ export async function handleRequest(req, env) {
         headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' },
       });
     }
+    if (p === '/settings.json') {
+      const s = await getSettings(env);
+      return new Response(JSON.stringify(s), {
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' },
+      });
+    }
     if (p === '/admin') {
       return new Response(adminPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
@@ -708,6 +764,22 @@ export async function handleRequest(req, env) {
       if (body.action === 'get') {
         const list = await getSources(env);
         return new Response(JSON.stringify({ ok: true, sources: list }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'get_settings') {
+        const s = await getSettings(env);
+        return new Response(JSON.stringify({ ok: true, settings: s }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'save_settings') {
+        const s = body.settings || {};
+        const settings = {
+          mode: s.mode === 'interval' ? 'interval' : 'daily',
+          dailyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.dailyTime || '') ? s.dailyTime : '01:00',
+          intervalHours: Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)),
+        };
+        await env.EPG_BUCKET.put('settings.json', JSON.stringify(settings, null, 2), {
+          httpMetadata: { contentType: 'application/json; charset=utf-8' },
+        });
+        return new Response(JSON.stringify({ ok: true, settings }), { headers: { 'Content-Type': 'application/json' } });
       }
       if (body.action === 'save') {
         const list = (body.sources || []).filter(s => s && s.url && String(s.url).startsWith('http')).map(s => ({
