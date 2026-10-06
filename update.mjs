@@ -1,16 +1,25 @@
 
-import { readFileSync, existsSync } from 'fs';
-// ---- Upload to R2 via Worker /push endpoint ----
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+// ---- Output: R2 via Worker /push, or local disk if OUTPUT_DIR is set (Docker mode) ----
 // GitHub Actions: UPDATE_TOKEN and PUSH_URL from secrets/env
 // Local VM: token from /tmp/epg_update_token.txt
+// Docker: set OUTPUT_DIR=/data to write files locally instead of pushing
+const OUTPUT_DIR = process.env.OUTPUT_DIR || '';
 const PUSH_URL = process.env.PUSH_URL || 'https://epg.cc.cd/push';
 function getToken() {
   if (process.env.UPDATE_TOKEN) return process.env.UPDATE_TOKEN.trim();
-  return readFileSync('/tmp/epg_update_token.txt', 'utf8').trim();
+  try { return readFileSync('/tmp/epg_update_token.txt', 'utf8').trim(); } catch (e) { return ''; }
 }
 const TOKEN = getToken();
 async function pushFile(key, body, contentType) {
   const buf = typeof body === 'string' ? Buffer.from(body, 'utf8') : Buffer.from(body);
+  if (OUTPUT_DIR) {
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+    writeFileSync(`${OUTPUT_DIR}/${key}`, buf);
+    console.log(`  wrote ${key} (${(buf.length/1024).toFixed(0)}KB)`);
+    return;
+  }
+  if (!TOKEN) throw new Error('UPDATE_TOKEN not set (or set OUTPUT_DIR for local mode)');
   const r = await fetch(`${PUSH_URL}?token=${encodeURIComponent(TOKEN)}&key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType },
@@ -65,6 +74,24 @@ function isGzipUrl(url) {
   return /\.gz(\?|$)/i.test(url) || /[?&]type=gz(&|$)/i.test(url);
 }
 async function loadSources() {
+  // Docker/local: OUTPUT_DIR/sources.json (admin UI) > EPG_SOURCES env > builtin
+  if (OUTPUT_DIR) {
+    try {
+      const p = `${OUTPUT_DIR}/sources.json`;
+      if (existsSync(p)) {
+        const arr = JSON.parse(readFileSync(p, 'utf8'));
+        const list = (Array.isArray(arr) ? arr : [])
+          .filter(s => s && s.url && String(s.url).startsWith('http'))
+          .map(s => [String(s.name || 'src'), String(s.url), [1, 2, 3].includes(s.priority) ? s.priority : 2]);
+        if (list.length) { console.log(`  sources: loaded ${list.length} from ${p} (admin)`); return list; }
+      }
+    } catch (e) { console.log('  local sources.json failed:', e.message); }
+    if (process.env.EPG_SOURCES) {
+      const list = parseSourceList(process.env.EPG_SOURCES);
+      if (list.length) { console.log(`  sources: loaded ${list.length} from EPG_SOURCES env`); return list; }
+    }
+    return SRC.builtin;
+  }
   // 1) R2 sources.json (admin UI)  2) Worker var (sources.txt)  3) builtin
   try {
     const r = await fetch('https://epg.cc.cd/sources.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
