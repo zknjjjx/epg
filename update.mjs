@@ -346,7 +346,7 @@ async function update() {
     const c = channels[id] || { id, name: id, icon: '' };
     return { id: c.id, name: c.name, icon: c.icon };
   });
-  await pushFile('channels.json', JSON.stringify(chList), 'application/json; charset=utf-8');
+  await pushFile('channels.json', JSON.stringify(chList, null, 2), 'application/json; charset=utf-8');
 
   const meta = {
     updatedAt: new Date().toISOString(),
@@ -362,7 +362,7 @@ async function update() {
     sources: ['TvWasm/autoEPG', '51zmt', '112114'],
     errors,
   };
-  await pushFile('meta.json', JSON.stringify(meta), 'application/json; charset=utf-8');
+  await pushFile('meta.json', JSON.stringify(meta, null, 2), 'application/json; charset=utf-8');
 
   // ---- 7. Per-source merged counts + run log history ----
   const mergedBySrc = {};
