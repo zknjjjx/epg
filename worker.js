@@ -417,7 +417,7 @@ ${srcRows}</table>
 
 function adminPage() {
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EPG 源管理</title>
+<title>设置</title>
 <style>
 *{box-sizing:border-box}
 body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:720px;margin:0 auto;padding:24px 16px 40px;color:#1d1d1f;background:#f7f8fa}
@@ -444,11 +444,11 @@ input:focus{outline:none;border-color:#2563eb}
 .badge{font-size:11px;border-radius:6px;padding:2px 8px;font-weight:700}
 .p1{background:#fef3c7;color:#92400e}.p2{background:#dbeafe;color:#1d4ed8}.p3{background:#fce7f3;color:#9d174d}
 </style></head><body>
-<h1>🔧 EPG 数据源管理</h1>
+<h1>⚙️ 设置</h1>
 <p class="sub"><a class="back" href="/">← 返回首页</a></p>
 <div class="card" id="loginCard">
   <h3 style="margin:4px 0 8px">请输入管理密码</h3>
-  <input type="password" id="pwd" placeholder="管理密码（与推送密钥相同）" onkeydown="if(event.key==='Enter')doLogin()">
+  <input type="password" id="pwd" placeholder="管理密码" onkeydown="if(event.key==='Enter')doLogin()">
   <div class="err" id="loginErr"></div>
   <button class="btn-login" onclick="doLogin()">登录</button>
   <p class="hint">密码为 Worker 变量 ADMIN_PASSWORD（Cloudflare 后台设置，明文可见）。</p>
