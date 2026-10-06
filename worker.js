@@ -405,8 +405,7 @@ function homePage(host) {
   const subs = [
     ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
     ['XML 压缩包', '/epg.xml.gz', 'GZip 压缩，体积更小'],
-    ['DIYP 格式', '/diyp.json', 'DIYP 类播放器专用 JSON'],
-    ['DIYP 压缩包', '/diyp.json.gz', 'GZip 压缩，体积更小'],
+    ['DIYP 接口', '/api/diyp', 'DIYP / 酷9 播放器 EPG 栏直接填此地址'],
   ].map(([label, path, desc]) => `
     <div class="row">
       <div class="rowmain">
@@ -466,10 +465,10 @@ a.viewlink:hover .row{background:#f8fafc}
 ＋ <a href="https://epg.112114.xyz/" target="_blank">112114</a>
 <br>回看 7 天 · 预告未来 3 天 · 533 个频道</p>
 <div class="card"><h3>订阅地址</h3>${subs}
-<div class="api"><span class="t">DIYP 查询接口</span>
-<code>/api/diyp?ch=频道名&amp;date=YYYYMMDD</code>
-<span class="ex">例如：</span>
-<code>/api/diyp?ch=CCTV1&amp;date=20261006</code>
+<div class="api"><span class="t">DIYP 接口说明</span>
+<span class="ex">播放器 EPG 地址栏填：</span>
+<code>https://epg.cc.cd/api/diyp</code>
+<span class="ex">播放器会自动拼接 ?ch=频道名&amp;date=YYYYMMDD 查询（例如 ?ch=CCTV1&amp;date=20261006）。不要填 diyp.json 整包文件，会卡死。</span>
 </div></div>
 <div class="card"><h3>查看</h3>${views}</div>
 <div id="toast">已复制 ✓</div>
