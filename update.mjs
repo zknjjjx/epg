@@ -32,15 +32,45 @@ const SRC = {
   channels: 'https://github.com/TvWasm/autoEPG/releases/latest/download/channels.json',
   epg3: 'https://github.com/TvWasm/autoEPG/releases/latest/download/epg3.xml',
   hist: d => `https://github.com/TvWasm/autoEPG/releases/download/${d}/epg.xml`,
-  zmt: 'https://epg.51zmt.top:8001/e.xml',
-  pp112114: 'https://epg.112114.xyz/pp.xml.gz',
-  v1mk: 'https://epg.v1.mk/fy.xml',
-  epgpw: 'https://epg.pw/xmltv/epg_CN.xml',
-  sparkpp: 'https://raw.githubusercontent.com/sparkssssssssss/epg/main/pp.xml',
-  zsdc: 'https://epg.zsdc.eu.org/t.xml',
-  kuke31: 'https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz',
-  liliu: 'https://liliu.serv00.net/epg/download.php?type=gz',
+  // XMLTV source list: fetched from Worker /sources.txt (env EPG_SOURCES, one per line: name|url|priority)
+  // Falls back to builtin list if fetch fails.
+  builtin: [
+    ['51zmt', 'https://epg.51zmt.top:8001/e.xml', 1],
+    ['112114', 'https://epg.112114.xyz/pp.xml.gz', 2],
+    ['v1mk', 'https://epg.v1.mk/fy.xml', 2],
+    ['epgpw', 'https://epg.pw/xmltv/epg_CN.xml', 2],
+    ['sparkpp', 'https://raw.githubusercontent.com/sparkssssssssss/epg/main/pp.xml', 2],
+    ['zsdc', 'https://epg.zsdc.eu.org/t.xml', 2],
+    ['kuke31', 'https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz', 2],
+    ['liliu', 'https://liliu.serv00.net/epg/download.php?type=gz', 2],
+  ],
 };
+const SOURCES_URL = 'https://epg.cc.cd/sources.txt';
+
+function parseSourceList(text) {
+  // lines: name|url|priority  (# comments and blank lines skipped)
+  const out = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parts = line.split('|').map(s => s.trim());
+    if (parts.length < 2 || !parts[1].startsWith('http')) continue;
+    const pri = parseInt(parts[2], 10);
+    out.push([parts[0] || ('src' + (out.length + 1)), parts[1], pri >= 1 && pri <= 3 ? pri : 2]);
+  }
+  return out;
+}
+function isGzipUrl(url) {
+  return /\.gz(\?|$)/i.test(url) || /[?&]type=gz(&|$)/i.test(url);
+}
+async function loadSources() {
+  try {
+    const t = await fetchText(SOURCES_URL, 15000);
+    const list = parseSourceList(t);
+    if (list.length) { console.log(`  sources: loaded ${list.length} from ${SOURCES_URL}`); return list; }
+  } catch (e) { console.log('  sources: fetch failed, using builtin:', e.message); }
+  return SRC.builtin;
+}
 
 const BJ = 8 * 3600 * 1000; // Beijing offset ms
 
@@ -206,19 +236,13 @@ async function update() {
     } catch (e) { stat(srcName).error = e.message; errors.push(srcName + ': ' + e.message); }
   }
 
-  // 2a. 51zmt (2 days, CCTV + 卫视)
-  await mergeXMLTV('51zmt', SRC.zmt, false, 1, 60000);
-
-  // 2b. 112114 pp.xml.gz (today, ~493 channels incl. local stations)
-  await mergeXMLTV('112114', SRC.pp112114, true, 2, 90000);
-
-  // 2c. Extra aggregator sources (same taksssss/iptv-tool source list) for broader coverage
-  await mergeXMLTV('v1mk', SRC.v1mk, false, 2, 120000);
-  await mergeXMLTV('epgpw', SRC.epgpw, false, 2, 120000);
-  await mergeXMLTV('sparkpp', SRC.sparkpp, false, 2, 90000);
-  await mergeXMLTV('zsdc', SRC.zsdc, false, 2, 120000);
-  await mergeXMLTV('kuke31', SRC.kuke31, true, 2, 180000);
-  await mergeXMLTV('liliu', SRC.liliu, true, 2, 120000);
+  // 2a-2c. XMLTV sources from Worker config (or builtin fallback), sorted by priority
+  const srcList = await loadSources();
+  srcList.sort((a, b) => a[2] - b[2]); // low priority first, high priority overwrites
+  for (const [sname, surl, spri] of srcList) {
+    const gz = isGzipUrl(surl);
+    await mergeXMLTV(sname, surl, gz, spri, gz ? 180000 : 120000);
+  }
 
   // 2d. autoEPG official: 3-day + 7-day history
   const now = Date.now();
