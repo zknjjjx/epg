@@ -415,6 +415,109 @@ ${srcRows}</table>
 </body></html>`;
 }
 
+function adminPage() {
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EPG 源管理</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:720px;margin:0 auto;padding:24px 16px 40px;color:#1d1d1f;background:#f7f8fa}
+h1{font-size:22px;margin:4px 0 4px}
+.sub{color:#6b7280;font-size:13px;margin:0 0 16px}
+.card{background:#fff;border-radius:14px;padding:16px 18px;margin:12px 0;box-shadow:0 2px 10px rgba(30,64,175,.06)}
+.row{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+.row:last-child{border:none}
+.row .nm{font-weight:700;width:90px;flex-shrink:0}
+.row .url{flex:1;min-width:200px;font-size:12px;color:#4b5563;word-break:break-all;font-family:ui-monospace,monospace}
+select.pri{padding:6px;border:1px solid #d1d5db;border-radius:8px;font-size:13px}
+button{border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-del{background:#fee2e2;color:#b91c1c}
+.btn-add{background:#2563eb;color:#fff}
+.btn-save{background:#059669;color:#fff;padding:10px 28px;font-size:15px}
+.btn-login{background:#2563eb;color:#fff;padding:10px 28px;font-size:15px;width:100%}
+input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid #d1d5db;border-radius:10px;font-size:14px;margin:6px 0}
+input:focus{outline:none;border-color:#2563eb}
+.formgrid{display:grid;grid-template-columns:110px 1fr 90px;gap:8px;margin:10px 0}
+.hint{font-size:12px;color:#9ca3af;line-height:1.7}
+.err{color:#b91c1c;font-size:13px;margin:8px 0;display:none}
+.okmsg{color:#059669;font-size:13px;margin:8px 0;display:none}
+.back{display:inline-block;margin-bottom:8px;color:#2563eb;text-decoration:none;font-size:14px}
+.badge{font-size:11px;border-radius:6px;padding:2px 8px;font-weight:700}
+.p1{background:#fef3c7;color:#92400e}.p2{background:#dbeafe;color:#1d4ed8}.p3{background:#fce7f3;color:#9d174d}
+</style></head><body>
+<h1>🔧 EPG 数据源管理</h1>
+<p class="sub"><a class="back" href="/">← 返回首页</a></p>
+<div class="card" id="loginCard">
+  <h3 style="margin:4px 0 8px">请输入管理密码</h3>
+  <input type="password" id="pwd" placeholder="管理密码（与推送密钥相同）" onkeydown="if(event.key==='Enter')doLogin()">
+  <div class="err" id="loginErr"></div>
+  <button class="btn-login" onclick="doLogin()">登录</button>
+  <p class="hint">密码即 Worker 的 UPDATE_TOKEN 密钥，Cloudflare 后台可查。</p>
+</div>
+<div id="mainUI" style="display:none">
+  <div class="card"><h3 style="margin:4px 0">当前数据源 <span class="hint" id="cnt"></span></h3><div id="list"></div></div>
+  <div class="card"><h3 style="margin:4px 0">添加新源</h3>
+    <div class="formgrid">
+      <input type="text" id="nName" placeholder="名称">
+      <input type="text" id="nUrl" placeholder="https://...">
+      <select id="nPri" class="pri"><option value="1">优先级 1</option><option value="2" selected>优先级 2</option><option value="3">优先级 3</option></select>
+    </div>
+    <button class="btn-add" onclick="addSrc()">＋ 添加</button>
+    <p class="hint">优先级：1=低（先抓取，易被覆盖），3=高（官方源，后抓取覆盖其他）。gzip 会自动识别（.gz 结尾或 type=gz）。改完点下方保存，GitHub 第二天凌晨自动生效。</p>
+  </div>
+  <div style="text-align:center;margin:16px 0">
+    <button class="btn-save" onclick="saveAll()">💾 保存全部</button>
+    <div class="okmsg" id="saveOk">已保存 ✓</div>
+    <div class="err" id="saveErr"></div>
+  </div>
+</div>
+<script>
+var _pwd='', _list=[];
+function api(action, extra){
+  var b = Object.assign({action:action, password:_pwd}, extra||{});
+  return fetch('/admin/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json();});
+}
+function doLogin(){
+  _pwd = document.getElementById('pwd').value;
+  api('get').then(function(d){
+    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); }
+    else { var e=document.getElementById('loginErr'); e.textContent=d.error||'登录失败'; e.style.display='block'; }
+  });
+}
+function priBadge(p){ return '<span class="badge p'+p+'">P'+p+'</span>'; }
+function render(){
+  var h='';
+  _list.forEach(function(s,i){
+    h += '<div class="row"><span class="nm">'+esc(s.name)+'</span>'
+      + '<span class="url">'+esc(s.url)+'</span>'
+      + priBadge(s.priority)
+      + '<select class="pri" onchange="setPri('+i+',this.value)">'
+      + [1,2,3].map(function(p){return '<option value="'+p+'"'+(p===s.priority?' selected':'')+'>P'+p+'</option>';}).join('')
+      + '</select>'
+      + '<button class="btn-del" onclick="delSrc('+i+')">删除</button></div>';
+  });
+  document.getElementById('list').innerHTML = h || '<p class="hint">暂无数据源</p>';
+  document.getElementById('cnt').textContent = '（共 '+_list.length+' 个）';
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setPri(i,v){ _list[i].priority = parseInt(v,10); render(); }
+function delSrc(i){ if(confirm('删除 "'+_list[i].name+'"？')){ _list.splice(i,1); render(); } }
+function addSrc(){
+  var n=document.getElementById('nName').value.trim(), u=document.getElementById('nUrl').value.trim(), p=parseInt(document.getElementById('nPri').value,10);
+  if(!u || u.indexOf('http')!==0){ alert('URL 必须以 http 开头'); return; }
+  _list.push({name:n||('src'+(_list.length+1)), url:u, priority:p});
+  document.getElementById('nName').value=''; document.getElementById('nUrl').value='';
+  render();
+}
+function saveAll(){
+  api('save',{sources:_list}).then(function(d){
+    if(d.ok){ var e=document.getElementById('saveOk'); e.textContent='已保存 ✓（共 '+d.count+' 个源）'; e.style.display='block';
+      setTimeout(function(){e.style.display='none';},2000); }
+    else { var x=document.getElementById('saveErr'); x.textContent=d.error||'保存失败'; x.style.display='block'; }
+  });
+}
+</script></body></html>`;
+}
+
 function homePage(host) {
   const subs = [
     ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
@@ -478,7 +581,7 @@ a.viewlink:hover .row{background:#f8fafc}
 ＋ <a href="https://epg.51zmt.top:8001/" target="_blank">51zmt</a>
 ＋ <a href="https://epg.112114.xyz/" target="_blank">112114</a>
 ＋ v1.mk ＋ epg.pw ＋ zsdc ＋ kuke31 ＋ liliu 等共 9 个源
-<br>回看 7 天 · 预告未来 3 天</p>
+<br>回看 7 天 · 预告未来 3 天 · <a href="/admin">源管理</a></p>
 <div class="card"><h3>订阅地址</h3>${subs}
 </div>
 <div class="card"><h3>查看</h3>${views}</div>
@@ -525,6 +628,41 @@ async function diypQuery(env, url) {
   return new Response(JSON.stringify(day || { channel_name: hit.channel_name, date, epg_data: [] }), { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
 }
 
+// ---- EPG source list management ----
+// Precedence: R2 sources.json (admin UI) > Worker var EPG_SOURCES > builtin default
+function parseSourceText(text) {
+  const out = [];
+  const re = /([^\s|#][^\s|]*)\|(https?:\/\/[^\s|]+)(?:\|([123]))?/g;
+  const s = String(text || '');
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    const ls = s.lastIndexOf('\n', m.index - 1) + 1;
+    if (s.slice(ls, m.index).trimStart().startsWith('#')) continue;
+    out.push({ name: m[1].trim(), url: m[2].trim(), priority: m[3] ? parseInt(m[3], 10) : 2 });
+  }
+  return out;
+}
+function defaultSources() { return parseSourceText(DEFAULT_SOURCES); }
+async function getSources(env) {
+  try {
+    const o = await env.EPG_BUCKET.get('sources.json');
+    if (o) {
+      const arr = JSON.parse(await o.text());
+      if (Array.isArray(arr) && arr.length) return arr.filter(s => s && s.url).map(s => ({
+        name: String(s.name || 'src'), url: String(s.url), priority: [1,2,3].includes(s.priority) ? s.priority : 2,
+      }));
+    }
+  } catch (e) { /* fall through */ }
+  if (env.EPG_SOURCES) {
+    const arr = parseSourceText(env.EPG_SOURCES);
+    if (arr.length) return arr;
+  }
+  return defaultSources();
+}
+function sourcesToText(list) {
+  return list.map(s => `${s.name}|${s.url}|${s.priority}`).join('\n') + '\n';
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
@@ -544,7 +682,7 @@ export default {
       const token = url.searchParams.get('token');
       const key = url.searchParams.get('key');
       const expected = env.UPDATE_TOKEN;
-      const allowed = ['epg.xml', 'epg.xml.gz', 'diyp.json', 'diyp.json.gz', 'channels.json', 'meta.json', 'logs.json', 'actions.json'];
+      const allowed = ['epg.xml', 'epg.xml.gz', 'diyp.json', 'diyp.json.gz', 'channels.json', 'meta.json', 'logs.json', 'actions.json', 'sources.json'];
       if (!expected || token !== expected) return new Response('forbidden', { status: 403 });
       if (!allowed.includes(key)) return new Response('bad key', { status: 400 });
       const ct = key.endsWith('.gz') ? 'application/gzip' : key.endsWith('.json') ? 'application/json; charset=utf-8' : 'application/xml; charset=utf-8';
@@ -552,9 +690,42 @@ export default {
       return new Response('ok', { status: 200 });
     }
     if (p === '/sources.txt') {
-      return new Response(env.EPG_SOURCES || DEFAULT_SOURCES, {
+      const list = await getSources(env);
+      return new Response(sourcesToText(list), {
         headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' },
       });
+    }
+    if (p === '/sources.json') {
+      const list = await getSources(env);
+      return new Response(JSON.stringify(list), {
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' },
+      });
+    }
+    if (p === '/admin') {
+      return new Response(adminPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+    if (p === '/admin/api' && req.method === 'POST') {
+      let body = {};
+      try { body = await req.json(); } catch (e) { return new Response('bad json', { status: 400 }); }
+      if (!env.UPDATE_TOKEN || body.password !== env.UPDATE_TOKEN) {
+        return new Response(JSON.stringify({ ok: false, error: '密码错误' }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'get') {
+        const list = await getSources(env);
+        return new Response(JSON.stringify({ ok: true, sources: list }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'save') {
+        const list = (body.sources || []).filter(s => s && s.url && String(s.url).startsWith('http')).map(s => ({
+          name: String(s.name || 'src').slice(0, 40), url: String(s.url).slice(0, 500),
+          priority: [1, 2, 3].includes(s.priority) ? s.priority : 2,
+        }));
+        await env.EPG_BUCKET.put('sources.json', JSON.stringify(list, null, 2), {
+          httpMetadata: { contentType: 'application/json; charset=utf-8' },
+        });
+        // allow /push for sources.json so updater can also write it if needed
+        return new Response(JSON.stringify({ ok: true, count: list.length }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: false, error: 'unknown action' }), { headers: { 'Content-Type': 'application/json' } });
     }
     if (p === '/log') {
       let logs = [], actions = [];
