@@ -1,5 +1,5 @@
 // epg-new Worker: independent EPG service
-// Sources: TvWasm/autoEPG (official) + 51zmt + 112114
+// Sources: TvWasm/autoEPG (official) + 8 XMLTV sources (configurable via EPG_SOURCES / admin UI)
 // Outputs: XMLTV, GZip, DIYP JSON, channels.json, meta.json
 // Schedule: daily 01:00 Beijing (17:00 UTC)
 
@@ -318,7 +318,7 @@ async function update(env) {
     diypGzipBytes: gzDiyp.length,
     rangeStart: progs.length ? new Date(progs[0].start).toISOString() : null,
     rangeEnd: progs.length ? new Date(progs[progs.length - 1].start).toISOString() : null,
-    sources: ['TvWasm/autoEPG', '51zmt', '112114'],
+    sources: ['TvWasm/autoEPG', '+8 XMLTV (see /sources.txt)'],
     errors,
   };
   await env.EPG_BUCKET.put('meta.json', JSON.stringify(meta), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
