@@ -8,12 +8,12 @@
 - **DIYP 接口**：`/d`（DIYP / 酷9 播放器直接填此地址）
 - **频道列表 / 更新状态 / 更新日志**：网页直接查看
 - **数据源管理**：网页可视化增删 EPG 源，无需改代码
-- **全自动**：每天北京时间凌晨 01:00 通过 GitHub Actions 更新
+- **全自动**：GitHub Actions 每小时检查，按管理后台设置的计划更新（默认每天北京时间 01:00）
 
 ## 架构
 
 ```
-GitHub Actions（每天 01:00 运行 update.mjs）
+GitHub Actions（每小时触发，update.mjs 按计划决定是否执行）
     │ 抓取 9 个 EPG 源 → 合并去重 → 生成文件
     ▼
 Cloudflare Worker /push（密钥验证）
@@ -110,7 +110,7 @@ openssl rand -hex 32
 3. 等 1-2 分钟，看到绿色 ✅ 即成功
 4. 访问你的 Worker 域名，首页、`/log` 都应该有数据了
 
-> 之后每天北京时间凌晨 01:00 自动运行，无需干预。
+> 之后按管理后台设置的计划自动运行（默认每天北京时间 01:00），无需干预。
 
 ---
 
@@ -137,6 +137,18 @@ openssl rand -hex 32
 
 保存后第二天凌晨自动生效。源列表按 `名称|URL|优先级` 格式存储，gzip 会自动识别（URL 以 `.gz` 结尾或含 `type=gz`）。
 
+### 更新计划
+
+`/admin` 的"更新计划"可设置两种模式：
+
+- **每天定时**：每天北京时间指定时间跑一次（如 01:00）
+- **每隔 N 小时**：每 N 小时跑一次（如 6 小时）
+
+GitHub Actions 设为每小时触发一次，update.mjs 启动时读取计划，时间没到就直接跳过。
+某次抓取失败的话，下个整点会自动重试，不会一整天没数据。
+
+> 注意：`.github/workflows/update.yml` 的 cron 需设为每小时：`0 * * * *`（GitHub App 无权改 workflow 文件，需手动改）。
+
 ---
 
 ## 数据源
@@ -158,7 +170,7 @@ openssl rand -hex 32
 |------|------|
 | `worker.js` | Cloudflare Worker：静态文件服务 + `/push` 接收 + DIYP 查询 + 管理后台 |
 | `update.mjs` | 更新脚本：抓取、合并、生成、推送（Node 20+，跑在 GitHub Actions） |
-| `.github/workflows/update.yml` | GitHub Actions 定时任务（每天北京时间 01:00） |
+| `.github/workflows/update.yml` | GitHub Actions 定时任务（每小时触发，按计划执行） |
 
 ## 本地手动更新
 
