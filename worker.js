@@ -11,7 +11,20 @@ const SRC = {
   pp112114: 'https://epg.112114.xyz/pp.xml.gz',
 };
 
-const BJ = 8 * 3600 * 1000; // Beijing offset ms
+const BJ = 8 * 3600 * 1000;
+// Default EPG source list (one per line: name|url|priority). Override via Worker variable EPG_SOURCES.
+// priority: 1=low, 2=normal, 3=high (autoEPG official is always 3, hardcoded in updater).
+// gzip is auto-detected from URL (.gz suffix or type=gz param).
+const DEFAULT_SOURCES = `# 名称|URL|优先级(1-3,默认2)
+51zmt|https://epg.51zmt.top:8001/e.xml|1
+112114|https://epg.112114.xyz/pp.xml.gz|2
+v1mk|https://epg.v1.mk/fy.xml|2
+epgpw|https://epg.pw/xmltv/epg_CN.xml|2
+sparkpp|https://raw.githubusercontent.com/sparkssssssssss/epg/main/pp.xml|2
+zsdc|https://epg.zsdc.eu.org/t.xml|2
+kuke31|https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz|2
+liliu|https://liliu.serv00.net/epg/download.php?type=gz|2
+`; // Beijing offset ms
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -358,10 +371,11 @@ function logPage(host, logs, actions) {
       <td>${(s.fetchMs / 1000).toFixed(1)}s</td>
       <td>${s.parsed.toLocaleString()}</td>
       <td>${s.merged.toLocaleString()}</td>
+      <td>${(s.parsed - s.merged).toLocaleString()}</td>
       <td>${s.channels}</td>
       <td>${esc(s.days || '-')}</td>
       <td>${s.error ? '<span class="bad">' + esc(s.error) + '</span>' : (s.histOk ? '历史 ' + esc(s.histOk) + ' 天' : '-')}</td>
-    </tr>`).join('') : '<tr><td colspan="8">暂无更新记录</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9">暂无更新记录</td></tr>';
   const runRows = (actions || []).map(a => {
     const at = new Date(a.time).getTime();
     const match = logs.find(l => {
@@ -395,9 +409,9 @@ th{color:#888;font-weight:600}
 <table><tr><th>运行时间</th><th>状态</th><th>频道</th><th>节目</th><th>详情</th></tr>${runRows}</table>
 <p class="hint">状态来自 GitHub Actions；失败时频道/节目显示为 -，点"查看运行"看具体报错。</p></div>
 <div class="card"><h3>最新一次（${latest ? esc(bjTimeStr(latest.time)) : '-'}）数据源详情</h3>
-<table><tr><th>数据源</th><th>状态</th><th>抓取耗时</th><th>解析节目数</th><th>有效节目数</th><th>覆盖频道</th><th>数据日期</th><th>备注</th></tr>
+<table><tr><th>数据源</th><th>状态</th><th>抓取耗时</th><th>解析节目数</th><th>有效节目数</th><th>重复跳过</th><th>覆盖频道</th><th>数据日期</th><th>备注</th></tr>
 ${srcRows}</table>
-<p class="hint">解析节目数 = 从该源抓到的原始条数；有效节目数 = 去重合并后最终采用的条数（后抓取的源会覆盖先抓取的同名节目）。</p></div>
+<p class="hint">解析节目数 = 从该源抓到的原始条数；有效节目数 = 去重合并后最终采用的条数；重复跳过 = 与其他源重复未采用的条数。源列表可在 Cloudflare 后台 Worker 变量 EPG_SOURCES 中修改（一行一个）。</p></div>
 </body></html>`;
 }
 
@@ -540,6 +554,11 @@ export default {
       const ct = key.endsWith('.gz') ? 'application/gzip' : key.endsWith('.json') ? 'application/json; charset=utf-8' : 'application/xml; charset=utf-8';
       await env.EPG_BUCKET.put(key, req.body, { httpMetadata: { contentType: ct } });
       return new Response('ok', { status: 200 });
+    }
+    if (p === '/sources.txt') {
+      return new Response(env.EPG_SOURCES || DEFAULT_SOURCES, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' },
+      });
     }
     if (p === '/log') {
       let logs = [], actions = [];
