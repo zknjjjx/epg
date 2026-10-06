@@ -413,6 +413,36 @@ async function update() {
   }
   const diypStr = JSON.stringify(diyp);
 
+  // ---- 5b. Total failure check: no source succeeded -> keep old data, retry next hour ----
+  // "Failure" = ALL sources failed. A single source failing is normal; partial data is still useful.
+  const anyOk = Object.values(srcStats).some(s => s.ok);
+  if (!anyOk) {
+    console.log('TOTAL FAILURE: all sources failed, keeping previous data');
+    const failLog = {
+      time: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      channels: 0,
+      programmes: 0,
+      sources: Object.values(srcStats).map(s => ({
+        name: s.name, ok: false, fetchMs: s.fetchMs || 0, parsed: 0, merged: 0,
+        dayMin: null, dayMax: null, histOk: null, error: s.error,
+      })),
+      errors,
+    };
+    try {
+      let logs = [];
+      try {
+        const r = await fetch('https://epg.cc.cd/log.json');
+        if (r.ok) logs = await r.json();
+      } catch (e) { /* fresh */ }
+      logs.unshift(failLog);
+      logs = logs.slice(0, 30);
+      await pushFile('logs.json', JSON.stringify(logs), 'application/json; charset=utf-8');
+      console.log('  failure logged to logs.json, old data files untouched');
+    } catch (e) { console.log('  could not push failure log:', e.message); }
+    throw new Error('all sources failed');
+  }
+
   // ---- 6. Upload to R2 via /push ----
   const gzXml = await gzipBytes(xml);
   const gzDiyp = await gzipBytes(diypStr);
