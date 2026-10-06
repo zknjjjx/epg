@@ -189,6 +189,37 @@ A: Worker → 设置 → 域和路由里管理。记得同步改 GitHub 的 `PUS
 - GitHub Actions：公开仓库免费，私有仓库每月 2000 分钟免费（每次运行约 1 分钟）
 - 全程 **0 元**
 
+## Docker 部署（自托管）
+
+不想用 Cloudflare？可以用 Docker 在自己的服务器/NAS 上跑完整服务：
+
+```bash
+docker run -d \
+  --name epg \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v ./data:/data \
+  -e ADMIN_PASSWORD=你的密码 \
+  ghcr.io/zknjjjx/epg:latest
+```
+
+或用 `docker-compose.yml`（已在仓库中，改好密码后 `docker-compose up -d`）。
+
+容器启动后自动抓取一次，之后每天 01:00 自动更新。所有接口和 Cloudflare 版一致：
+`/` 首页、`/epg.xml`、`/d`、`/admin` 等。数据存在挂载的 `./data` 目录。
+
+环境变量：
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `ADMIN_PASSWORD` | `changeme` | /admin 管理密码，务必修改 |
+| `DATA_DIR` | `/data` | 数据存储目录 |
+| `PORT` | `8080` | 监听端口 |
+| `EPG_SOURCES` | 内置 8 个源 | 自定义数据源 |
+| `UPDATE_CRON` | `daily` | `daily`=每天01:00，或填分钟数 |
+
+镜像每次 push 到 main 分支时由 GitHub Actions 自动构建并推送到 `ghcr.io/zknjjjx/epg:latest`。
+
 ## License
 
 MIT
