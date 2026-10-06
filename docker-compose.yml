@@ -1,0 +1,13 @@
+services:
+  epg:
+    image: ghcr.io/zknjjjx/epg:latest
+    container_name: epg
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - ADMIN_PASSWORD=changeme   # 改成你自己的管理密码
+      # - EPG_SOURCES=            # 可选：自定义数据源，一行一个 "名称|URL|优先级"
+      # - UPDATE_CRON=daily       # daily=每天01:00更新，或填分钟数如 720
