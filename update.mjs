@@ -34,6 +34,12 @@ const SRC = {
   hist: d => `https://github.com/TvWasm/autoEPG/releases/download/${d}/epg.xml`,
   zmt: 'https://epg.51zmt.top:8001/e.xml',
   pp112114: 'https://epg.112114.xyz/pp.xml.gz',
+  v1mk: 'https://epg.v1.mk/fy.xml',
+  epgpw: 'https://epg.pw/xmltv/epg_CN.xml',
+  sparkpp: 'https://raw.githubusercontent.com/sparkssssssssss/epg/main/pp.xml',
+  zsdc: 'https://epg.zsdc.eu.org/t.xml',
+  kuke31: 'https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz',
+  liliu: 'https://liliu.serv00.net/epg/download.php?type=gz',
 };
 
 const BJ = 8 * 3600 * 1000; // Beijing offset ms
@@ -184,33 +190,37 @@ async function update() {
     progMap.set(ch + '|' + start, { ch, start, stop, title, src, pri });
   };
 
+  // Generic XMLTV source merger
+  async function mergeXMLTV(srcName, url, isGzip, pri, timeoutMs) {
+    try {
+      const t0 = Date.now();
+      const xml = isGzip ? await fetchGzipText(url, timeoutMs) : await fetchText(url, timeoutMs);
+      const items = parseXMLTV(xml, aliasOf);
+      stat(srcName).fetchMs = Date.now() - t0;
+      stat(srcName).ok = true;
+      const chNames = {};
+      for (const it of items) {
+        if (it.type === 'channel') chNames[it.id] = it.name;
+        else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, srcName, pri);
+      }
+    } catch (e) { stat(srcName).error = e.message; errors.push(srcName + ': ' + e.message); }
+  }
+
   // 2a. 51zmt (2 days, CCTV + 卫视)
-  try {
-    const t0 = Date.now();
-    const items = parseXMLTV(await fetchText(SRC.zmt), aliasOf);
-    stat('51zmt').fetchMs = Date.now() - t0;
-    stat('51zmt').ok = true;
-    const chNames = {};
-    for (const it of items) {
-      if (it.type === 'channel') chNames[it.id] = it.name;
-      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '51zmt', 1);
-    }
-  } catch (e) { stat('51zmt').error = e.message; errors.push('51zmt: ' + e.message); }
+  await mergeXMLTV('51zmt', SRC.zmt, false, 1, 60000);
 
   // 2b. 112114 pp.xml.gz (today, ~493 channels incl. local stations)
-  try {
-    const t0 = Date.now();
-    const items = parseXMLTV(await fetchGzipText(SRC.pp112114), aliasOf);
-    stat('112114').fetchMs = Date.now() - t0;
-    stat('112114').ok = true;
-    const chNames = {};
-    for (const it of items) {
-      if (it.type === 'channel') chNames[it.id] = it.name;
-      else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, '112114', 2);
-    }
-  } catch (e) { stat('112114').error = e.message; errors.push('112114: ' + e.message); }
+  await mergeXMLTV('112114', SRC.pp112114, true, 2, 90000);
 
-  // 2c. autoEPG official: 3-day + 7-day history
+  // 2c. Extra aggregator sources (same taksssss/iptv-tool source list) for broader coverage
+  await mergeXMLTV('v1mk', SRC.v1mk, false, 2, 120000);
+  await mergeXMLTV('epgpw', SRC.epgpw, false, 2, 120000);
+  await mergeXMLTV('sparkpp', SRC.sparkpp, false, 2, 90000);
+  await mergeXMLTV('zsdc', SRC.zsdc, false, 2, 120000);
+  await mergeXMLTV('kuke31', SRC.kuke31, true, 2, 180000);
+  await mergeXMLTV('liliu', SRC.liliu, true, 2, 120000);
+
+  // 2d. autoEPG official: 3-day + 7-day history
   const now = Date.now();
   const dayMs = 86400000;
   const bjToday = bjDate(now);
@@ -263,7 +273,7 @@ async function update() {
     }
   }
   progs.length = 0;
-  progs.push(...deduped);
+  for (let i = 0; i < deduped.length; i++) progs.push(deduped[i]);
   const usedCh = new Set(progs.map(p => p.ch));
 
   // ---- 4. Build XMLTV ----
