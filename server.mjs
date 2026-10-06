@@ -5,7 +5,7 @@
 //   PORT           listen port (default 8080)
 //   ADMIN_PASSWORD password for /admin (default: changeme)
 //   EPG_SOURCES    optional "name|url|priority" lines, overrides builtin
-//   UPDATE_CRON    update interval: "daily" (default, 01:00 local) or minutes number
+//   UPDATE_CRON    update interval: "daily" (default, 01:00 Beijing) or minutes number
 
 import http from 'http';
 import { spawn } from 'child_process';
@@ -93,11 +93,14 @@ function runUpdate() {
 }
 
 function msUntilNext1am() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(1, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
-  return next - now;
+  // Beijing 01:00, consistent with update.mjs (container may run in UTC)
+  const BJ = 8 * 3600000;
+  const now = Date.now();
+  const bj = new Date(now + BJ);
+  const next = new Date(bj);
+  next.setUTCHours(1, 0, 0, 0);
+  if (next.getTime() <= bj.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime() - bj.getTime();
 }
 function schedule() {
   const cron = (process.env.UPDATE_CRON || 'daily').trim();
@@ -107,7 +110,7 @@ function schedule() {
     setInterval(runUpdate, mins * 60000);
   } else {
     const delay = msUntilNext1am();
-    console.log(`[updater] daily at 01:00 local (first in ${(delay / 3600000).toFixed(1)}h)`);
+    console.log(`[updater] daily at 01:00 Beijing (first in ${(delay / 3600000).toFixed(1)}h)`);
     setTimeout(function tick() { runUpdate(); setTimeout(tick, 24 * 3600000); }, delay);
   }
 }
