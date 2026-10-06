@@ -609,9 +609,12 @@ a.viewlink:hover .row{background:#f8fafc}
 .api .ex{color:#6b7280;font-size:12px}
 #toast{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 22px;border-radius:999px;display:none;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:99}
 .badge{display:inline-block;font-size:11px;background:#ecfdf5;color:#047857;border-radius:999px;padding:2px 10px;margin-left:8px;vertical-align:2px;font-weight:600}
+.hdr{display:flex;align-items:center;justify-content:space-between}
+.gear{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(30,64,175,.08);text-decoration:none;font-size:20px;flex-shrink:0}
+.gear:hover{background:#f1f5f9}
 </style></head><body>
-<h1>📺 EPG 节目单服务<span class="badge">每天 01:00 更新</span></h1>
-<p class="sub">回看 7 天 · 预告未来 3 天 · <a href="/admin">源管理</a></p>
+<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">每天 01:00 更新</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
+<p class="sub">回看 7 天 · 预告未来 3 天</p>
 <div class="card"><h3>订阅地址</h3>${subs}
 </div>
 <div class="card"><h3>查看</h3>${views}</div>
