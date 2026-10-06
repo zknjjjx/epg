@@ -65,6 +65,17 @@ function isGzipUrl(url) {
   return /\.gz(\?|$)/i.test(url) || /[?&]type=gz(&|$)/i.test(url);
 }
 async function loadSources() {
+  // 1) R2 sources.json (admin UI)  2) Worker var (sources.txt)  3) builtin
+  try {
+    const r = await fetch('https://epg.cc.cd/sources.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (r.ok) {
+      const arr = await r.json();
+      const list = (Array.isArray(arr) ? arr : [])
+        .filter(s => s && s.url && String(s.url).startsWith('http'))
+        .map(s => [String(s.name || 'src'), String(s.url), [1, 2, 3].includes(s.priority) ? s.priority : 2]);
+      if (list.length) { console.log(`  sources: loaded ${list.length} from sources.json (admin)`); return list; }
+    }
+  } catch (e) { console.log('  sources.json failed:', e.message); }
   try {
     const t = await fetchText(SOURCES_URL, 15000);
     const list = parseSourceList(t);
