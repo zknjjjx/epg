@@ -575,6 +575,50 @@ async function nextUpdateStr(env) {
   const hm = String(nbj.getUTCHours()).padStart(2, '0') + ':' + String(nbj.getUTCMinutes()).padStart(2, '0');
   return '下次 ' + (sameDay ? '今天 ' : '明天 ') + hm + ' 更新';
 }
+function channelsPage() {
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>频道列表 - EPG</title><style>
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f4f6fb;margin:0;padding:16px;color:#1f2937}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:20px;margin:8px 0 12px}
+.search{width:100%;box-sizing:border-box;padding:12px 16px;font-size:16px;border:1px solid #d1d5db;border-radius:12px;margin-bottom:12px;outline:none}
+.search:focus{border-color:#3b82f6}
+.count{color:#6b7280;font-size:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.card{background:#fff;border-radius:12px;padding:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card img{width:48px;height:48px;object-fit:contain;margin-bottom:8px}
+.card .nm{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.back{display:inline-block;margin-bottom:12px;color:#3b82f6;text-decoration:none;font-size:14px}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← 返回首页</a>
+<h1>📺 频道列表</h1>
+<input class="search" id="q" placeholder="🔍 搜索频道名称…" oninput="filter()">
+<div class="count" id="count"></div>
+<div class="grid" id="grid"></div>
+</div><script>
+var _all=[];
+fetch('/channels.json').then(function(r){return r.json();}).then(function(d){
+  _all = Array.isArray(d) ? d : (d.channels||[]);
+  render('');
+});
+function render(kw){
+  var kwl = kw.trim().toLowerCase();
+  var list = _all.filter(function(c){
+    return !kwl || (c.name||'').toLowerCase().indexOf(kwl) >= 0;
+  });
+  document.getElementById('count').textContent = '共 ' + list.length + ' 个频道' + (kwl ? '（搜索：'+kw+'）' : '');
+  var h = '';
+  list.forEach(function(c){
+    var icon = c.icon ? '<img src="'+c.icon+'" loading="lazy" onerror="this.style.display=\'none\'">' : '<div style="width:48px;height:48px;margin:0 auto 8px;background:#e5e7eb;border-radius:8px"></div>';
+    h += '<div class="card">'+icon+'<div class="nm" title="'+esc(c.name)+'">'+esc(c.name)+'</div></div>';
+  });
+  document.getElementById('grid').innerHTML = h || '<p style="color:#9ca3af">没有找到匹配的频道</p>';
+}
+function filter(){ render(document.getElementById('q').value); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script></body></html>`;
+}
+
 function homePage(host) {
   const subs = [
     ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
@@ -590,7 +634,7 @@ function homePage(host) {
       <button class="copy" data-url="${host}${path}" onclick="copyUrl(this)">复制</button>
     </div>`).join('');
   const views = [
-    ['频道列表', '/channels.json', '全部频道及台标'],
+    ['频道列表', '/channels', '全部频道及台标'],
     ['更新状态', '/meta.json', '数据量、时间范围'],
     ['更新日志', '/log', '每次更新记录'],
   ].map(([label, path, desc]) => `
@@ -763,6 +807,9 @@ export async function handleRequest(req, env) {
     if (p === '/diyp.json') return serveR2(env, 'diyp.json', 'application/json; charset=utf-8');
     if (p === '/diyp.json.gz') return serveR2(env, 'diyp.json.gz', 'application/gzip');
     if (p === '/channels.json') return serveR2(env, 'channels.json', 'application/json; charset=utf-8');
+    if (p === '/channels') {
+      return new Response(channelsPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
     if (p === '/meta.json') return serveR2(env, 'meta.json', 'application/json; charset=utf-8');
     if (p === '/log.json') return serveR2(env, 'logs.json', 'application/json; charset=utf-8');
     if (p === '/actions.json') return serveR2(env, 'actions.json', 'application/json; charset=utf-8');
