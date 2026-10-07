@@ -603,7 +603,7 @@ a.viewlink:hover .row{background:#f8fafc}
 .gear{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(30,64,175,.08);text-decoration:none;font-size:20px;flex-shrink:0}
 .gear:hover{background:#f1f5f9}
 </style></head><body>
-<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">每天 00:46、07:47、12:33 更新</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
+<div class="hdr"><h1>📺 EPG 节目单服务</h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
 <p class="sub">回看 7 天 · 预告未来 3 天</p>
 <div class="card"><h3>订阅地址</h3>${subs}
 </div>
