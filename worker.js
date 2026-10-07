@@ -955,8 +955,34 @@ export async function handleRequest(req, env) {
     return new Response('not found', { status: 404 });
 }
 
+async function triggerGitHubUpdate(env) {
+  const pat = env.GITHUB_PAT;
+  if (!pat) { console.log('GITHUB_PAT not configured'); return false; }
+  try {
+    const r = await fetch('https://api.github.com/repos/zknjjjx/epg/actions/workflows/epg-update.yml/dispatches', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + pat,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'epg-worker-cron',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    console.log('GitHub dispatch:', r.status);
+    return r.status === 204;
+  } catch (e) {
+    console.log('Dispatch error:', String(e).slice(0, 200));
+    return false;
+  }
+}
+
 export default {
   async fetch(req, env, ctx) {
     return handleRequest(req, env);
+  },
+  async scheduled(event, env, ctx) {
+    console.log('Cron triggered:', event.cron);
+    ctx.waitUntil(triggerGitHubUpdate(env));
   },
 };
