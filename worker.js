@@ -609,7 +609,7 @@ function render(kw){
   document.getElementById('count').textContent = '共 ' + list.length + ' 个频道' + (kwl ? '（搜索：'+kw+'）' : '');
   var h = '';
   list.forEach(function(c){
-    var icon = c.icon ? '<img src="'+c.icon+'" loading="lazy" onerror="this.style.display=\'none\'">' : '<div style="width:48px;height:48px;margin:0 auto 8px;background:#e5e7eb;border-radius:8px"></div>';
+    var icon = c.icon ? '<img src="'+c.icon+'" loading="lazy">' : '<div style="width:48px;height:48px;margin:0 auto 8px;background:#e5e7eb;border-radius:8px"></div>' '<div style="width:48px;height:48px;margin:0 auto 8px;background:#e5e7eb;border-radius:8px"></div>';
     h += '<div class="card">'+icon+'<div class="nm" title="'+esc(c.name)+'">'+esc(c.name)+'</div></div>';
   });
   document.getElementById('grid').innerHTML = h || '<p style="color:#9ca3af">没有找到匹配的频道</p>';
