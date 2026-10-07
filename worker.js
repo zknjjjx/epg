@@ -481,6 +481,10 @@ input:focus{outline:none;border-color:#2563eb}
   </div>
 
   <div style="text-align:center;margin:16px 0">
+    <button class="btn-save" onclick="triggerUpdate()" style="background:#8b5cf6;margin-bottom:12px">🚀 手动更新节目单</button>
+    <div class="okmsg" id="updateOk">已触发更新，约1分钟后生效 ✓</div>
+    <div class="err" id="updateErr"></div>
+    <br>
     <button class="btn-save" onclick="saveAll()">💾 保存全部</button>
     <div class="okmsg" id="saveOk">已保存 ✓</div>
     <div class="err" id="saveErr"></div>
@@ -491,6 +495,18 @@ var _pwd='', _list=[];
 function api(action, extra){
   var b = Object.assign({action:action, password:_pwd}, extra||{});
   return fetch('/admin/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json();});
+}
+function triggerUpdate(){
+  if(!confirm('确定要手动触发一次节目单更新吗？约需1分钟。')) return;
+  api('trigger_update').then(function(d){
+    if(d.ok){
+      var e=document.getElementById('updateOk'); e.style.display='block';
+      setTimeout(function(){e.style.display='none';},5000);
+    } else {
+      var x=document.getElementById('updateErr'); x.textContent=d.error||'触发失败'; x.style.display='block';
+      setTimeout(function(){x.style.display='none';},5000);
+    }
+  });
 }
 function doLogin(){
   _pwd = document.getElementById('pwd').value;
@@ -855,6 +871,32 @@ export async function handleRequest(req, env) {
       }
       if (body.action === 'check_default') {
         return new Response(JSON.stringify({ ok: true, isDefault }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'trigger_update') {
+        // Trigger GitHub Actions workflow_dispatch
+        const pat = env.GITHUB_PAT;
+        if (!pat) {
+          return new Response(JSON.stringify({ ok: false, error: '未配置 GITHUB_PAT，请在 Cloudflare 后台添加' }), { headers: { 'Content-Type': 'application/json' } });
+        }
+        try {
+          const r = await fetch('https://api.github.com/repos/zknjjjx/epg/actions/workflows/epg-update.yml/dispatches', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + pat,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'epg-worker',
+            },
+            body: JSON.stringify({ ref: 'main' }),
+          });
+          if (r.status === 204) {
+            return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+          }
+          const t = await r.text();
+          return new Response(JSON.stringify({ ok: false, error: 'GitHub API: ' + r.status + ' ' + t.slice(0, 200) }), { headers: { 'Content-Type': 'application/json' } });
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: String(e).slice(0, 200) }), { headers: { 'Content-Type': 'application/json' } });
+        }
       }
       if (body.action === 'change_password') {
         const np = String(body.newPassword || '').trim();
