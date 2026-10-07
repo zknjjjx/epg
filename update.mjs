@@ -218,32 +218,37 @@ async function gzipBytes(str) {
 // ---- Schedule check: GitHub cron runs hourly; only do real work when due ----
 // Settings from https://epg.cc.cd/settings.json (admin UI), default daily 01:00 Beijing
 async function shouldRun() {
-  let s = { mode: 'daily', dailyTime: '01:00', intervalHours: 6 };
+  let s = { startTime: '01:00', intervalHours: 6 };
   try {
     const r = await fetch('https://epg.cc.cd/settings.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) s = { ...s, ...(await r.json()) };
-  } catch (e) { console.log('  settings: using default (daily 01:00)'); }
+    if (r.ok) {
+      const j = await r.json();
+      // migrate old schema
+      if (!j.startTime && j.dailyTime) j.startTime = j.dailyTime;
+      s = { ...s, ...j };
+    }
+  } catch (e) { console.log('  settings: using default (01:00 start, every 6h)'); }
   let lastRun = 0;
   try {
     const r = await fetch('https://epg.cc.cd/meta.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (r.ok) lastRun = new Date((await r.json()).updatedAt).getTime() || 0;
   } catch (e) { /* first run */ }
 
+  // combined: daily startTime (Beijing), then every intervalHours; run if latest due slot not yet run
   const now = Date.now();
-  if (s.mode === 'interval') {
-    const h = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6));
-    if (now - lastRun >= h * 3600000) return true;
-    console.log(`  schedule: skip (last run ${((now - lastRun) / 3600000).toFixed(1)}h ago, every ${h}h)`);
-    return false;
-  }
-  // daily mode: run once per Beijing day, at/after dailyTime; a failed run retries next hour
   const bj = new Date(now + BJ);
-  const [hh, mm] = String(s.dailyTime || '01:00').split(':').map(Number);
-  const today = bj.toISOString().slice(0, 10);
-  const lastDay = new Date(lastRun + BJ).toISOString().slice(0, 10);
-  const pastTime = bj.getUTCHours() * 60 + bj.getUTCMinutes() >= hh * 60 + mm;
-  if (pastTime && lastDay !== today) return true;
-  console.log(`  schedule: skip (daily ${s.dailyTime} Beijing, last run ${lastDay})`);
+  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
+  const day0 = new Date(bj);
+  day0.setUTCHours(0, 0, 0, 0);
+  const start = day0.getTime() + sh * 3600000 + sm * 60000; // Beijing ms
+  const nowBj = bj.getTime();
+  if (nowBj < start) { console.log('  schedule: skip (before start time)'); return false; }
+  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
+  const n = Math.floor((nowBj - start) / iv);
+  const slot = start - BJ + n * iv; // UTC ms of latest due slot
+  if (lastRun < slot) return true;
+  const nbj = new Date(slot + BJ);
+  console.log(`  schedule: skip (slot ${nbj.toISOString().slice(11, 16)} already run)`);
   return false;
 }
 
