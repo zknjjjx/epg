@@ -404,7 +404,7 @@ th{color:#888;font-weight:600}
 .hint{color:#888;font-size:13px}a{color:#1677ff}
 </style></head><body>
 <h1>📋 更新日志</h1>
-<p class="hint"><a href="/">← 返回首页</a> · 每天北京时间凌晨 1 点自动更新（GitHub Actions）· 保留最近 30 次</p>
+<p class="hint"><a href="/">← 返回首页</a> · 每天 00:46、07:47、12:33（北京时间）自动更新 · 保留最近 30 次</p>
 <div class="card"><h3>定时任务运行记录</h3>
 <table><tr><th>运行时间</th><th>状态</th><th>频道</th><th>节目</th><th>详情</th></tr>${runRows}</table>
 <p class="hint">状态来自 GitHub Actions；失败时频道/节目显示为 -，点"查看运行"看具体报错。</p></div>
