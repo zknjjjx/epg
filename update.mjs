@@ -217,36 +217,7 @@ async function gzipBytes(str) {
 
 // ---- Schedule check: GitHub cron runs hourly; only do real work when due ----
 // Settings from https://epg.cc.cd/settings.json (admin UI), default daily 01:00 Beijing
-async function shouldRun() {
-  let s = { startTime: '01:00', intervalHours: 6 };
-  try {
-    const r = await fetch('https://epg.cc.cd/settings.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) {
-      const j = await r.json();
-      if (!j.startTime && j.dailyTime) j.startTime = j.dailyTime; // migrate old
-      s = { ...s, ...j };
-    }
-  } catch (e) { /* use default */ }
-  let lastRun = 0;
-  try {
-    const r = await fetch('https://epg.cc.cd/meta.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) lastRun = new Date((await r.json()).updatedAt).getTime() || 0;
-  } catch (e) { /* first run */ }
-  // Beijing slots: startTime, then every intervalHours. Run if latest due slot hasn't run.
-  const now = Date.now(), BJ = 8 * 3600000;
-  const bj = new Date(now + BJ);
-  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
-  const day0 = new Date(bj); day0.setUTCHours(0, 0, 0, 0);
-  const start = day0.getTime() + sh * 3600000 + sm * 60000;
-  if (bj.getTime() < start) return false;
-  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
-  const n = Math.floor((bj.getTime() - start) / iv);
-  const slot = start - BJ + n * iv;
-  return lastRun < slot;
-}
-
 async function update() {
-  if (!(await shouldRun())) { console.log('SKIPPED by schedule'); return null; }
   const started = Date.now();
   const errors = [];
   const srcStats = {}; // name -> {name, ok, fetchMs, parsed, merged, dayMin, dayMax, error}
