@@ -185,12 +185,13 @@ async function fetchOnce(url, timeoutMs, asText) {
   } finally { clearTimeout(t); }
 }
 
-// Retry up to 3 times with backoff — helps with flaky proxy/VPN tunnels
-async function fetchRetry(url, timeoutMs, asText, tries = 3) {
+// Retry up to 5 times with exponential backoff — helps with flaky networks
+// Delays: 3s, 6s, 12s, 24s (total ~45s extra per source max)
+async function fetchRetry(url, timeoutMs, asText, tries = 5) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try { return await fetchOnce(url, timeoutMs, asText); }
-    catch (e) { lastErr = e; if (i < tries - 1) await sleep(3000 * (i + 1)); }
+    catch (e) { lastErr = e; if (i < tries - 1) await sleep(3000 * Math.pow(2, i)); }
   }
   throw lastErr;
 }
