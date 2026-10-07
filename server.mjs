@@ -5,7 +5,7 @@
 //   PORT           listen port (default 8080)
 //   ADMIN_PASSWORD password for /admin (default: changeme)
 //   EPG_SOURCES    optional "name|url|priority" lines, overrides builtin
-//   UPDATE_CRON    update interval: "daily" (default, 01:00 Beijing) or minutes number
+//   UPDATE_CRON    update interval in minutes (default 240 = every 4 hours, aligned with Cloudflare version)
 
 import http from 'http';
 import { spawn } from 'child_process';
@@ -92,27 +92,11 @@ function runUpdate() {
   child.on('error', (e) => { updating = false; console.error('[updater] spawn failed:', e.message); });
 }
 
-function msUntilNext1am() {
-  // Beijing 01:00, consistent with update.mjs (container may run in UTC)
-  const BJ = 8 * 3600000;
-  const now = Date.now();
-  const bj = new Date(now + BJ);
-  const next = new Date(bj);
-  next.setUTCHours(1, 0, 0, 0);
-  if (next.getTime() <= bj.getTime()) next.setUTCDate(next.getUTCDate() + 1);
-  return next.getTime() - bj.getTime();
-}
 function schedule() {
-  const cron = (process.env.UPDATE_CRON || 'daily').trim();
-  if (/^\d+$/.test(cron)) {
-    const mins = Math.min(1440, Math.max(10, parseInt(cron, 10)));
-    console.log(`[updater] every ${mins} minutes`);
-    setInterval(runUpdate, mins * 60000);
-  } else {
-    const delay = msUntilNext1am();
-    console.log(`[updater] daily at 01:00 Beijing (first in ${(delay / 3600000).toFixed(1)}h)`);
-    setTimeout(function tick() { runUpdate(); setTimeout(tick, 24 * 3600000); }, delay);
-  }
+  const cron = (process.env.UPDATE_CRON || '240').trim();
+  const mins = /^\d+$/.test(cron) ? Math.min(1440, Math.max(10, parseInt(cron, 10))) : 240;
+  console.log(`[updater] every ${mins} minutes`);
+  setInterval(runUpdate, mins * 60000);
 }
 
 server.listen(PORT, () => {
