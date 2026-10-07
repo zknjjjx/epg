@@ -466,19 +466,17 @@ input:focus{outline:none;border-color:#2563eb}
   </div>
   <div class="card"><h3 style="margin:4px 0">⏰ 更新计划</h3>
     <div class="row">
-      <label style="font-size:14px"><input type="radio" name="smode" value="daily" id="mDaily" onchange="modeChange()"> 每天定时</label>
-      <input type="time" id="dailyTime" value="01:00" style="width:110px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
-      <span class="hint">（北京时间）</span>
-    </div>
-    <div class="row">
-      <label style="font-size:14px"><input type="radio" name="smode" value="interval" id="mInterval" onchange="modeChange()"> 每隔</label>
+      <label style="font-size:14px">每天从</label>
+      <input type="time" id="startTime" value="01:00" style="width:110px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
+      <label style="font-size:14px">开始，每隔</label>
       <input type="number" id="intervalHours" value="6" min="1" max="24" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
-      <span class="hint">小时跑一次</span>
+      <label style="font-size:14px">小时跑一次</label>
+      <span class="hint">（北京时间）</span>
     </div>
     <button class="btn-add" onclick="saveSettings()">💾 保存计划</button>
     <div class="okmsg" id="setOk">已保存 ✓</div>
     <div class="err" id="setErr"></div>
-    <p class="hint">GitHub 每小时检查一次，到点才真正抓取。某次失败的话，下个整点会自动重试，不会空一整天。</p>
+    <p class="hint" id="schedHint">例如 01:00 开始、每 6 小时：01:00、07:00、13:00、19:00 各跑一次。到点才真正抓取，失败下次自动补上。</p>
   </div>
   <div style="text-align:center;margin:16px 0">
     <button class="btn-save" onclick="saveAll()">💾 保存全部</button>
@@ -528,18 +526,23 @@ function loadSettings(){
   api('get_settings').then(function(d){
     if(d.ok && d.settings){
       var s=d.settings;
-      document.getElementById('mDaily').checked = s.mode!=='interval';
-      document.getElementById('mInterval').checked = s.mode==='interval';
-      document.getElementById('dailyTime').value = s.dailyTime||'01:00';
+      document.getElementById('startTime').value = s.startTime||s.dailyTime||'01:00';
       document.getElementById('intervalHours').value = s.intervalHours||6;
+      updateSchedHint();
     }
   });
 }
-function modeChange(){}
+function updateSchedHint(){
+  var t=document.getElementById('startTime').value||'01:00';
+  var iv=parseInt(document.getElementById('intervalHours').value,10)||6;
+  var parts=t.split(':'), h=parseInt(parts[0],10), m=parts[1]||'00';
+  var times=[];
+  for(var i=0;i<24 && times.length*iv<24;i++){ var hh=(h+i*iv)%24; times.push((hh<10?'0':'')+hh+':'+m); }
+  document.getElementById('schedHint').textContent='每天 '+times.join('、')+' 各跑一次（北京时间）。到点才真正抓取，失败下次自动补上。';
+}
 function saveSettings(){
-  var mode = document.getElementById('mInterval').checked ? 'interval' : 'daily';
-  api('save_settings',{settings:{mode:mode, dailyTime:document.getElementById('dailyTime').value, intervalHours:parseInt(document.getElementById('intervalHours').value,10)}}).then(function(d){
-    if(d.ok){ var e=document.getElementById('setOk'); e.style.display='block'; setTimeout(function(){e.style.display='none';},2000); }
+  api('save_settings',{settings:{startTime:document.getElementById('startTime').value, intervalHours:parseInt(document.getElementById('intervalHours').value,10)}}).then(function(d){
+    if(d.ok){ var e=document.getElementById('setOk'); e.style.display='block'; updateSchedHint(); setTimeout(function(){e.style.display='none';},2000); }
     else { var x=document.getElementById('setErr'); x.textContent=d.error||'保存失败'; x.style.display='block'; }
   });
 }
@@ -555,27 +558,27 @@ function saveAll(){
 
 async function nextUpdateStr(env) {
   const s = await getSettings(env);
+  const now = Date.now();
+  const BJ = 8 * 3600000;
   let lastRun = 0;
   try {
     const o = await env.EPG_BUCKET.get('meta.json');
     if (o) lastRun = new Date(JSON.parse(await o.text()).updatedAt).getTime() || 0;
   } catch (e) { /* none yet */ }
-  const now = Date.now();
-  if (s.mode === 'interval') {
-    const next = lastRun + s.intervalHours * 3600000;
-    if (!lastRun || next <= now) return '即将更新';
-    const bj = new Date(next + BJ);
-    return '下次 ' + bj.toISOString().slice(5, 16).replace('T', ' ') + ' 更新';
-  }
-  const bjNow = new Date(now + BJ);
-  const today = bjNow.toISOString().slice(0, 10);
-  const lastDay = lastRun ? new Date(lastRun + BJ).toISOString().slice(0, 10) : '';
-  const hm = String(s.dailyTime || '01:00');
-  const [hh, mm] = hm.split(':').map(Number);
-  const nowMins = bjNow.getUTCHours() * 60 + bjNow.getUTCMinutes();
-  if (lastDay === today) return '下次 明天 ' + hm + ' 更新';
-  if (nowMins < hh * 60 + mm) return '下次 今天 ' + hm + ' 更新';
-  return '即将更新';
+  const slot = latestDueSlot(now, s);
+  if (slot && lastRun < slot) return '即将更新';
+  // next slot after now
+  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
+  const bj = new Date(now + BJ);
+  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
+  const day0 = new Date(bj);
+  day0.setUTCHours(0, 0, 0, 0);
+  let next = day0.getTime() + sh * 3600000 + sm * 60000;
+  while (next <= bj.getTime()) next += iv;
+  const nbj = new Date(next);
+  const sameDay = nbj.toISOString().slice(0, 10) === bj.toISOString().slice(0, 10);
+  const hm = String(nbj.getUTCHours()).padStart(2, '0') + ':' + String(nbj.getUTCMinutes()).padStart(2, '0');
+  return '下次 ' + (sameDay ? '今天 ' : '明天 ') + hm + ' 更新';
 }
 function homePage(host, nextStr) {
   const subs = [
@@ -700,20 +703,50 @@ function parseSourceText(text) {
   return out;
 }
 function defaultSources() { return parseSourceText(DEFAULT_SOURCES); }
-const DEFAULT_SETTINGS = { mode: 'daily', dailyTime: '01:00', intervalHours: 6 };
+const DEFAULT_SETTINGS = { startTime: '01:00', intervalHours: 6 };
 async function getSettings(env) {
   try {
     const o = await env.EPG_BUCKET.get('settings.json');
     if (o) {
       const s = JSON.parse(await o.text());
+      // new schema: startTime + intervalHours; migrate from old mode/dailyTime
+      let startTime = s.startTime;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || '')) {
+        startTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(s.dailyTime || '') ? s.dailyTime : '01:00';
+      }
       return {
-        mode: s.mode === 'interval' ? 'interval' : 'daily',
-        dailyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.dailyTime || '') ? s.dailyTime : '01:00',
+        startTime,
         intervalHours: Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)),
       };
     }
   } catch (e) { /* fall through */ }
   return { ...DEFAULT_SETTINGS };
+}
+// due(dateMs, settings): latest expected slot (Beijing ms) <= now, or 0 if none yet today
+function latestDueSlot(nowMs, s) {
+  const BJ = 8 * 3600000;
+  const bj = new Date(nowMs + BJ);
+  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
+  const day0 = new Date(bj);
+  day0.setUTCHours(0, 0, 0, 0);
+  const start = day0.getTime() + sh * 3600000 + sm * 60000; // Beijing ms
+  const nowBj = bj.getTime();
+  if (nowBj < start) return 0;
+  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
+  const n = Math.floor((nowBj - start) / iv);
+  return start - BJ + n * iv; // back to UTC ms
+}
+async function shouldTriggerUpdate(env) {
+  const s = await getSettings(env);
+  const now = Date.now();
+  const slot = latestDueSlot(now, s);
+  if (!slot) return false;
+  let lastRun = 0;
+  try {
+    const o = await env.EPG_BUCKET.get('meta.json');
+    if (o) lastRun = new Date(JSON.parse(await o.text()).updatedAt).getTime() || 0;
+  } catch (e) { /* first run */ }
+  return lastRun < slot;
 }
 async function getSources(env) {
   try {
@@ -838,8 +871,41 @@ export async function handleRequest(req, env) {
     return new Response('not found', { status: 404 });
 }
 
+async function triggerGitHubUpdate(env) {
+  const pat = env.GITHUB_PAT;
+  if (!pat) { console.log('[cron] GITHUB_PAT not set, skip'); return; }
+  try {
+    const r = await fetch('https://api.github.com/repos/zknjjjx/epg/actions/workflows/epg-update.yml/dispatches', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + pat,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'epg-cron-trigger',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    console.log('[cron] github dispatch status: ' + r.status);
+  } catch (e) {
+    console.log('[cron] dispatch failed: ' + (e.message || e));
+  }
+}
 export default {
   async fetch(req, env, ctx) {
     return handleRequest(req, env);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        if (await shouldTriggerUpdate(env)) {
+          console.log('[cron] slot due, triggering GitHub update');
+          await triggerGitHubUpdate(env);
+        } else {
+          console.log('[cron] no slot due, skip');
+        }
+      } catch (e) {
+        console.log('[cron] error: ' + (e.message || e));
+      }
+    })());
   },
 };
