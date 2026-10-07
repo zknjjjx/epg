@@ -464,20 +464,7 @@ input:focus{outline:none;border-color:#2563eb}
     <button class="btn-add" onclick="addSrc()">＋ 添加</button>
     <p class="hint">优先级：1=低（先抓取，易被覆盖），3=高（官方源，后抓取覆盖其他）。gzip 会自动识别（.gz 结尾或 type=gz）。改完点下方保存，GitHub 第二天凌晨自动生效。</p>
   </div>
-  <div class="card"><h3 style="margin:4px 0">⏰ 更新计划</h3>
-    <div class="row">
-      <label style="font-size:14px">每天从</label>
-      <input type="time" id="startTime" value="01:00" style="width:110px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
-      <label style="font-size:14px">开始，每隔</label>
-      <input type="number" id="intervalHours" value="6" min="1" max="24" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:8px">
-      <label style="font-size:14px">小时跑一次</label>
-      <span class="hint">（北京时间）</span>
-    </div>
-    <button class="btn-add" onclick="saveSettings()">💾 保存计划</button>
-    <div class="okmsg" id="setOk">已保存 ✓</div>
-    <div class="err" id="setErr"></div>
-    <p class="hint" id="schedHint">例如 01:00 开始、每 6 小时：01:00、07:00、13:00、19:00 各跑一次。到点才真正抓取，失败下次自动补上。</p>
-  </div>
+
   <div style="text-align:center;margin:16px 0">
     <button class="btn-save" onclick="saveAll()">💾 保存全部</button>
     <div class="okmsg" id="saveOk">已保存 ✓</div>
@@ -493,7 +480,7 @@ function api(action, extra){
 function doLogin(){
   _pwd = document.getElementById('pwd').value;
   api('get').then(function(d){
-    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); loadSettings(); }
+    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); }
     else { var e=document.getElementById('loginErr'); e.textContent=d.error||'登录失败'; e.style.display='block'; }
   });
 }
@@ -521,30 +508,6 @@ function addSrc(){
   _list.push({name:n||('src'+(_list.length+1)), url:u, priority:p});
   document.getElementById('nName').value=''; document.getElementById('nUrl').value='';
   render();
-}
-function loadSettings(){
-  api('get_settings').then(function(d){
-    if(d.ok && d.settings){
-      var s=d.settings;
-      document.getElementById('startTime').value = s.startTime||s.dailyTime||'01:00';
-      document.getElementById('intervalHours').value = s.intervalHours||6;
-      updateSchedHint();
-    }
-  });
-}
-function updateSchedHint(){
-  var t=document.getElementById('startTime').value||'01:00';
-  var iv=parseInt(document.getElementById('intervalHours').value,10)||6;
-  var parts=t.split(':'), h=parseInt(parts[0],10), m=parts[1]||'00';
-  var times=[];
-  for(var i=0;i<24 && times.length*iv<24;i++){ var hh=(h+i*iv)%24; times.push((hh<10?'0':'')+hh+':'+m); }
-  document.getElementById('schedHint').textContent='每天 '+times.join('、')+' 各跑一次（北京时间）。到点才真正抓取，失败下次自动补上。';
-}
-function saveSettings(){
-  api('save_settings',{settings:{startTime:document.getElementById('startTime').value, intervalHours:parseInt(document.getElementById('intervalHours').value,10)}}).then(function(d){
-    if(d.ok){ var e=document.getElementById('setOk'); e.style.display='block'; updateSchedHint(); setTimeout(function(){e.style.display='none';},2000); }
-    else { var x=document.getElementById('setErr'); x.textContent=d.error||'保存失败'; x.style.display='block'; }
-  });
 }
 function saveAll(){
   api('save',{sources:_list}).then(function(d){
