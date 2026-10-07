@@ -1,19 +1,24 @@
 # 📺 EPG 节目单服务
 
-每天自动更新的中文电视节目单（EPG）服务，941 个频道、约 19 万条节目，回看 7 天、预告未来 3 天。
+每天自动更新的中文电视节目单（EPG）服务，940+ 个频道、约 19 万条节目，回看 7 天、预告未来 3 天。
 
 ## 功能
 
 - **XMLTV 格式**：`/epg.xml`（TiviMate / IPTV Pro / Kodi 通用）
 - **DIYP 接口**：`/d`（DIYP / 酷9 播放器直接填此地址）
-- **频道列表 / 更新状态 / 更新日志**：网页直接查看
-- **数据源管理**：网页可视化增删 EPG 源，无需改代码
-- **全自动**：GitHub Actions 每天定时更新 3 次（北京时间 00:46、07:47、12:33）
+- **频道列表**：`/channels`（带搜索框）
+- **更新状态 / 更新日志**：`/meta.json`、`/log` 网页直接查看
+- **数据源管理**：`/admin` 网页可视化增删 EPG 源，无需改代码
+- **手动更新**：`/admin` 一键触发更新
+- **全自动**：Cloudflare Cron 每 4 小时触发更新（北京时间 00:45、04:45、08:45、12:45、16:45、20:45）
 
 ## 架构
 
 ```
-GitHub Actions（每天 00:46、07:47、12:33 北京时间触发）
+Cloudflare Cron（每4小时，北京时间 00:45/04:45/08:45/12:45/16:45/20:45）
+    │ 调用 GitHub API (workflow_dispatch)
+    ▼
+GitHub Actions（update.mjs）
     │ 抓取 9 个 EPG 源 → 合并去重 → 生成文件
     ▼
 Cloudflare Worker /push（密钥验证）
@@ -24,6 +29,8 @@ Cloudflare R2（文件存储）
 ```
 
 重活都在 GitHub Actions 里干，Cloudflare Worker 只负责存文件和对外服务，**免费版足够**，不用开付费。
+
+> 为什么不用 GitHub 的定时触发？GitHub 的 schedule 触发器对新仓库/频繁修改的 cron 注册很慢（实测数小时无响应），改用 Cloudflare Cron 主动触发，稳定可靠。
 
 ---
 
@@ -65,26 +72,26 @@ Cloudflare R2（文件存储）
 
 ### 第五步：设置环境变量
 
-在 Worker → **设置** → **变量和密钥** → **添加变量**，逐个添加：
+在 Worker → **设置** → **变量和密钥** → **添加变量**：
 
 | 类型 | 名称 | 值 | 说明 |
 |------|------|-----|------|
-| 密钥 | `UPDATE_TOKEN` | 自己生成一串随机字符（见下） | GitHub 推送文件时的验证密钥 |
-| 文本 | `ADMIN_PASSWORD` | 自己设个密码，如 `epgadmin123` | 网页"源管理"的登录密码（**必须是"文本"类型**，不要选"密钥"，否则自己看不到密码无法登录） |
-| 文本 | `EPG_SOURCES` | 见下方 | EPG 数据源列表（可选不设，有内置默认） |
+| 密钥 | `UPDATE_TOKEN` | 自己生成一串随机字符 | GitHub 推送文件时的验证密钥 |
+| 密钥 | `GITHUB_PAT` | GitHub Personal Access Token | 手动更新按钮 + Cloudflare Cron 触发用（见下） |
 
-**生成 UPDATE_TOKEN**：在你电脑终端运行（或找个在线随机密码生成器）：
+**生成 UPDATE_TOKEN**：在终端运行：
 ```bash
 openssl rand -hex 32
 ```
-把输出的那串字符分别填到 Cloudflare 的密钥 **和** 下面 GitHub 的 Secret，**两边必须一致**。
+把输出填到 Cloudflare 的密钥 **和** 下面 GitHub 的 Secret，两边必须一致。
 
-**EPG_SOURCES**（可选）：一行一个，格式 `名称|URL|优先级`，例如：
-```
-51zmt|https://epg.51zmt.top:8001/e.xml|1
-112114|https://epg.112114.xyz/pp.xml.gz|2
-```
-不设置也行，代码里有内置默认的 8 个源。以后也可以在网页"源管理"里可视化修改，不用动这里。
+**生成 GITHUB_PAT**：
+1. 打开 https://github.com/settings/tokens/new
+2. Note 填 `epg-update`，Expiration 选 `No expiration`
+3. 勾选 `repo` 和 `workflow`
+4. 生成后复制，填到 Cloudflare 的密钥
+
+> **管理密码**：默认 `admin`，首次登录 `/admin` 时会强制要求修改，新密码保存在 R2。也可以在 Cloudflare 后台设置 `ADMIN_PASSWORD` 变量（文本类型）覆盖默认值。
 
 每次添加变量后点 **保存并部署**。
 
@@ -94,23 +101,28 @@ openssl rand -hex 32
 2. 点 **New repository secret**，添加两个：
    - `UPDATE_TOKEN`：和 Cloudflare 里填的**完全一样**
    - `PUSH_URL`：`https://你的Worker域名/push`
-     - Worker 默认域名类似 `https://epg-new.xxx.workers.dev`，在 Worker 页面的"访问"按钮旁能看到
-     - 如果你绑定了自定义域名，就填 `https://你的域名/push`
 
-### 第七步：绑定自定义域名（可选）
+### 第七步：设置 Cloudflare 定时触发
+
+1. Worker 页面 → **设置** → **触发器** → **添加 Cron 触发器**
+2. 输入：`45 0,4,8,12,16,20 * * *`
+3. 保存
+
+这个 cron 对应北京时间每天 00:45、04:45、08:45、12:45、16:45、20:45（每 4 小时一次）。
+
+### 第八步：绑定自定义域名（可选）
 
 1. Worker 页面 → **设置** → **域和路由** → **添加自定义域**
-2. 输入你的域名（如 `epg.example.com`），按提示去 DNS 添加 CNAME 记录
+2. 输入你的域名，按提示去 DNS 添加 CNAME 记录
 3. 等待生效后，把第六步的 `PUSH_URL` 改成新域名
 
-### 第八步：手动运行一次测试
+### 第九步：手动运行一次测试
 
-1. 打开你 Fork 的仓库 → **Actions** → 左侧选 **Daily EPG Update**
-2. 点 **Run workflow** → **Run workflow**
-3. 等 1-2 分钟，看到绿色 ✅ 即成功
-4. 访问你的 Worker 域名，首页、`/log` 都应该有数据了
+1. 访问 `https://你的域名/admin`，用 `admin` 登录并修改密码
+2. 点 **🚀 手动更新节目单**，约 1 分钟后生效
+3. 访问首页、`/log` 确认有数据
 
-> 之后每天在北京时间 00:46、07:47、12:33 自动运行，无需干预。
+> 之后每 4 小时自动运行，无需干预。
 
 ---
 
@@ -122,39 +134,41 @@ openssl rand -hex 32
 | `/epg.xml` | XMLTV 节目单（通用播放器） |
 | `/epg.xml.gz` | GZip 压缩版 |
 | `/d` | DIYP 接口（DIYP / 酷9 播放器 EPG 栏填此地址） |
-| `/channels.json` | 频道列表 |
+| `/channels` | 频道列表（带搜索） |
+| `/channels.json` | 频道列表（原始 JSON） |
 | `/meta.json` | 更新状态 |
 | `/log` | 更新日志（含每个源的抓取状态） |
-| `/admin` | 数据源管理（密码：ADMIN_PASSWORD） |
+| `/admin` | 数据源管理 + 手动更新 |
 
 ### 管理 EPG 数据源
 
-访问 `/admin`，输入管理密码后可以：
+访问 `/admin`，登录后可以：
 - 查看当前所有数据源
 - 删除不需要的源
 - 添加新源（填名称、URL、优先级）
-- 修改优先级（1=低，3=高，官方源建议设 3）
+- 一键手动触发更新
 
-保存后下次定时更新自动生效。源列表按 `名称|URL|优先级` 格式存储，gzip 会自动识别（URL 以 `.gz` 结尾或含 `type=gz`）。
+保存后下次定时更新自动生效。gzip 会自动识别（URL 以 `.gz` 结尾或含 `type=gz`）。
 
-### 更新时间
+### 更新机制
 
-GitHub Actions 每天在北京时间 **00:46、07:47、12:33** 自动更新 3 次（在 `.github/workflows/update.yml` 里写死，改时间直接改 cron）。
-
-**失败处理**：只有**所有源都抓取失败**才算失败——此时旧数据文件保留不动，失败记录写入日志。单个源失效是正常的（`/log` 里能看到哪个源挂了），不影响整体更新。
+- **定时**：Cloudflare Cron 每 4 小时调用 GitHub API 触发更新
+- **手动**：`/admin` 点按钮立即触发
+- **重试**：单个源抓取失败自动重试 5 次（3s/6s/12s/24s 退避），避免网络抖动
+- **失败处理**：只有**所有源都失败**才算失败，此时旧数据保留不动；单个源失败不影响整体
 
 ---
 
 ## 数据源
 
-默认 9 个源（与 [taksssss/iptv-tool](https://github.com/taksssss/iptv-tool) 同列表）：
+默认 9 个源：
 
 | 源 | 说明 | 优先级 |
 |----|------|--------|
-| TvWasm/autoEPG | 官方源，质量最高（代码写死） | 3 |
+| TvWasm/autoEPG | 官方源，质量最高 | 3 |
 | 51zmt | CCTV + 卫视 | 1 |
 | 112114 | 含地方台 | 2 |
-| v1.mk / epg.pw / sparkpp / zsdc / kuke31 / liliu | 聚合源，补全覆盖 | 2 |
+| v1.mk / epg.pw / sparkssssssssss / zsdc / kuke31 / liliu | 聚合源，补全覆盖 | 2 |
 
 合并规则：同频道、同标题、开始时间差 2 分钟内视为重复，保留高优先级来源的数据。
 
@@ -162,9 +176,9 @@ GitHub Actions 每天在北京时间 **00:46、07:47、12:33** 自动更新 3 �
 
 | 文件 | 说明 |
 |------|------|
-| `worker.js` | Cloudflare Worker：静态文件服务 + `/push` 接收 + DIYP 查询 + 管理后台 |
+| `worker.js` | Cloudflare Worker：静态文件服务 + `/push` 接收 + DIYP 查询 + 管理后台 + Cron 触发器 |
 | `update.mjs` | 更新脚本：抓取、合并、生成、推送（Node 20+，跑在 GitHub Actions） |
-| `.github/workflows/update.yml` | GitHub Actions 定时任务（每天 00:46、07:47、12:33 北京时间触发） |
+| `.github/workflows/epg-update.yml` | GitHub Actions：仅 `workflow_dispatch` 触发（定时由 Cloudflare Cron 发起） |
 
 ## 本地手动更新
 
@@ -175,22 +189,24 @@ UPDATE_TOKEN=xxx node update.mjs
 ## 常见问题
 
 **Q: Actions 运行失败？**
-A: 去 Actions 点进那次运行看日志。常见原因：GitHub Secret 的 `UPDATE_TOKEN` 和 Cloudflare 的不一致；`PUSH_URL` 写错了。
+A: 去 Actions 看日志。常见原因：`UPDATE_TOKEN` 两边不一致；`PUSH_URL` 写错了。
 
 **Q: 某个源失效了？**
-A: `/log` 页面会显示每个源的状态（正常/失败）和报错。去 `/admin` 把失效的源删掉就行。
+A: `/log` 会显示每个源的状态。去 `/admin` 把失效的源删掉就行。
+
+**Q: 忘记管理密码？**
+A: 删掉 R2 里的 `admin_pass.txt` 文件（R2 → epg-new → 找到删除），再删掉 `ADMIN_PASSWORD` 变量（如果有），然后用 `admin` 重新登录。
 
 **Q: 播放器里部分频道没节目单？**
-A: 频道名对不上。XMLTV 用 `<display-name>` 匹配，DIYP 用频道名查询。把对不上的台名记下来，可以提 Issue。
+A: 频道名对不上。把对不上的台名记下来，可以提 Issue。
 
-
-**Q: 想换 workers.dev 域名？**
-A: Worker → 设置 → 域和路由里管理。记得同步改 GitHub 的 `PUSH_URL` Secret。
+**Q: 定时没触发？**
+A: 检查 Cloudflare → Worker → 设置 → 触发器，确认 Cron 表达式已保存。再检查 `GITHUB_PAT` 是否有效（过期或权限不足会导致 401）。
 
 ## 费用
 
 - Cloudflare 免费版：Worker + R2 免费额度完全够用
-- GitHub Actions：公开仓库免费，私有仓库每月 2000 分钟免费（每次运行约 1 分钟）
+- GitHub Actions：公开仓库免费无限制；私有仓库每月 2000 分钟免费（每次运行约 1 分钟，每天 6 次约 180 分钟/月）
 - 全程 **0 元**
 
 ## Docker 部署（自托管）
@@ -207,25 +223,17 @@ docker run -d \
   ghcr.io/zknjjjx/epg:latest
 ```
 
-> **网络要求**：部分数据源（如 `raw.githubusercontent.com`、GitHub 相关的 autoEPG）
-> 在国内直连可能失败，需要科学上网环境。请确保容器所在网络能访问这些域名，
-> 否则对应源会抓取失败（单个源失败不影响其他源，系统会按计划正常更新）。
-> 若 8080 端口被占用，加 `-e PORT=其它端口` 即可。
+> **网络要求**：部分数据源在国内直连可能失败，需要科学上网环境。否则对应源会抓取失败（单个源失败不影响其他源）。
 
 或用 `docker-compose.yml`（已在仓库中，改好密码后 `docker-compose up -d`）。
 
-容器启动后自动抓取一次，之后每天 01:00 自动更新。所有接口和 Cloudflare 版一致：
-`/` 首页、`/epg.xml`、`/d`、`/admin` 等。数据存在挂载的 `./data` 目录。
-
-环境变量：
+容器启动后自动抓取一次，之后每天 01:00（北京时间）自动更新。所有接口和 Cloudflare 版一致。数据存在挂载的 `./data` 目录。
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `ADMIN_PASSWORD` | `changeme` | /admin 管理密码，务必修改 |
 | `DATA_DIR` | `/data` | 数据存储目录 |
 | `PORT` | `8080` | 监听端口 |
-| `EPG_SOURCES` | 内置 8 个源 | 自定义数据源 |
-| `UPDATE_CRON` | `daily` | `daily`=每天01:00，或填分钟数 |
 
 镜像每次 push 到 main 分支时由 GitHub Actions 自动构建并推送到 `ghcr.io/zknjjjx/epg:latest`。
 
