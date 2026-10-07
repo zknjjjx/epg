@@ -2,10 +2,9 @@ name: Daily EPG Update
 
 on:
   schedule:
-    schedule:
-  - cron: '46 16 * * *'
-  - cron: '47 23 * * *'
-  - cron: '22 3 * * *'
+    - cron: '46 16 * * *'
+    - cron: '47 23 * * *'
+    - cron: '22 3 * * *'
   workflow_dispatch:      # 允许手动触发
 
 jobs:
