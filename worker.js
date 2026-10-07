@@ -543,7 +543,7 @@ async function nextUpdateStr(env) {
   const hm = String(nbj.getUTCHours()).padStart(2, '0') + ':' + String(nbj.getUTCMinutes()).padStart(2, '0');
   return '下次 ' + (sameDay ? '今天 ' : '明天 ') + hm + ' 更新';
 }
-function homePage(host, nextStr) {
+function homePage(host) {
   const subs = [
     ['XML 节目单', '/epg.xml', 'TiviMate / IPTV Pro / Kodi 等通用格式'],
     ['XML 压缩包', '/epg.xml.gz', 'GZip 压缩，体积更小'],
@@ -603,7 +603,7 @@ a.viewlink:hover .row{background:#f8fafc}
 .gear{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(30,64,175,.08);text-decoration:none;font-size:20px;flex-shrink:0}
 .gear:hover{background:#f1f5f9}
 </style></head><body>
-<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">${esc(nextStr || '定时更新')}</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
+<div class="hdr"><h1>📺 EPG 节目单服务<span class="badge">每天 00:46、07:47、12:33 更新</span></h1><a class="gear" href="/admin" title="设置">⚙️</a></div>
 <p class="sub">回看 7 天 · 预告未来 3 天</p>
 <div class="card"><h3>订阅地址</h3>${subs}
 </div>
@@ -724,8 +724,7 @@ export async function handleRequest(req, env) {
     const p = url.pathname;
     const host = url.origin;
     if (p === '/') {
-      const nextStr = await nextUpdateStr(env).catch(() => '');
-      return new Response(homePage(host, nextStr), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      return new Response(homePage(host), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
     if (p === '/epg.xml') return serveR2(env, 'epg.xml', 'application/xml; charset=utf-8');
     if (p === '/epg.xml.gz') return serveR2(env, 'epg.xml.gz', 'application/gzip');
