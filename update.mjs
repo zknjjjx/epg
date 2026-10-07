@@ -217,43 +217,7 @@ async function gzipBytes(str) {
 
 // ---- Schedule check: GitHub cron runs hourly; only do real work when due ----
 // Settings from https://epg.cc.cd/settings.json (admin UI), default daily 01:00 Beijing
-async function shouldRun() {
-  let s = { startTime: '01:00', intervalHours: 6 };
-  try {
-    const r = await fetch('https://epg.cc.cd/settings.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) {
-      const j = await r.json();
-      // migrate old schema
-      if (!j.startTime && j.dailyTime) j.startTime = j.dailyTime;
-      s = { ...s, ...j };
-    }
-  } catch (e) { console.log('  settings: using default (01:00 start, every 6h)'); }
-  let lastRun = 0;
-  try {
-    const r = await fetch('https://epg.cc.cd/meta.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) lastRun = new Date((await r.json()).updatedAt).getTime() || 0;
-  } catch (e) { /* first run */ }
-
-  // combined: daily startTime (Beijing), then every intervalHours; run if latest due slot not yet run
-  const now = Date.now();
-  const bj = new Date(now + BJ);
-  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
-  const day0 = new Date(bj);
-  day0.setUTCHours(0, 0, 0, 0);
-  const start = day0.getTime() + sh * 3600000 + sm * 60000; // Beijing ms
-  const nowBj = bj.getTime();
-  if (nowBj < start) { console.log('  schedule: skip (before start time)'); return false; }
-  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
-  const n = Math.floor((nowBj - start) / iv);
-  const slot = start - BJ + n * iv; // UTC ms of latest due slot
-  if (lastRun < slot) return true;
-  const nbj = new Date(slot + BJ);
-  console.log(`  schedule: skip (slot ${nbj.toISOString().slice(11, 16)} already run)`);
-  return false;
-}
-
 async function update() {
-  if (!(await shouldRun())) { console.log('SKIPPED by schedule'); return; }
   const started = Date.now();
   const errors = [];
   const srcStats = {}; // name -> {name, ok, fetchMs, parsed, merged, dayMin, dayMax, error}
