@@ -736,18 +736,6 @@ function latestDueSlot(nowMs, s) {
   const n = Math.floor((nowBj - start) / iv);
   return start - BJ + n * iv; // back to UTC ms
 }
-async function shouldTriggerUpdate(env) {
-  const s = await getSettings(env);
-  const now = Date.now();
-  const slot = latestDueSlot(now, s);
-  if (!slot) return false;
-  let lastRun = 0;
-  try {
-    const o = await env.EPG_BUCKET.get('meta.json');
-    if (o) lastRun = new Date(JSON.parse(await o.text()).updatedAt).getTime() || 0;
-  } catch (e) { /* first run */ }
-  return lastRun < slot;
-}
 async function getSources(env) {
   try {
     const o = await env.EPG_BUCKET.get('sources.json');
@@ -873,7 +861,7 @@ export async function handleRequest(req, env) {
 
 async function triggerGitHubUpdate(env) {
   const pat = env.GITHUB_PAT;
-  if (!pat) { console.log('[cron] GITHUB_PAT not set, skip'); return; }
+  if (!pat) { console.log('[cron] GITHUB_PAT not set, skip'); return false; }
   try {
     const r = await fetch('https://api.github.com/repos/zknjjjx/epg/actions/workflows/epg-update.yml/dispatches', {
       method: 'POST',
@@ -886,9 +874,36 @@ async function triggerGitHubUpdate(env) {
       body: JSON.stringify({ ref: 'main' }),
     });
     console.log('[cron] github dispatch status: ' + r.status);
+    return r.status === 204;
   } catch (e) {
     console.log('[cron] dispatch failed: ' + (e.message || e));
+    return false;
   }
+}
+// Simple: is now within 15min after an unrun slot? (Beijing time)
+async function isSlotDue(env) {
+  const s = await getSettings(env);
+  const now = Date.now();
+  const BJ = 8 * 3600000;
+  const bj = new Date(now + BJ);
+  const [sh, sm] = String(s.startTime || '01:00').split(':').map(Number);
+  const day0 = new Date(bj);
+  day0.setUTCHours(0, 0, 0, 0);
+  const start = day0.getTime() + sh * 3600000 + sm * 60000; // Beijing ms
+  const nowBj = bj.getTime();
+  if (nowBj < start) return false;
+  const iv = Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) * 3600000;
+  // check each slot today: due if now in [slot, slot+15min) and not yet run
+  let lastRun = 0;
+  try {
+    const o = await env.EPG_BUCKET.get('meta.json');
+    if (o) lastRun = new Date(JSON.parse(await o.text()).updatedAt).getTime() || 0;
+  } catch (e) { /* first run */ }
+  for (let slot = start; slot <= nowBj; slot += iv) {
+    const slotUtc = slot - BJ;
+    if (nowBj < slot + 15 * 60000 && lastRun < slotUtc) return true;
+  }
+  return false;
 }
 export default {
   async fetch(req, env, ctx) {
@@ -897,11 +912,9 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       try {
-        if (await shouldTriggerUpdate(env)) {
+        if (await isSlotDue(env)) {
           console.log('[cron] slot due, triggering GitHub update');
           await triggerGitHubUpdate(env);
-        } else {
-          console.log('[cron] no slot due, skip');
         }
       } catch (e) {
         console.log('[cron] error: ' + (e.message || e));
