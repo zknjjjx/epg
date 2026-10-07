@@ -26,6 +26,21 @@ kuke31|https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz|2
 liliu|https://liliu.serv00.net/epg/download.php?type=gz|2
 `; // Beijing offset ms
 
+const DEFAULT_ADMIN_PASSWORD = 'admin';
+
+async function getAdminPassword(env) {
+  // Priority: R2 stored > env var > default 'admin'
+  try {
+    const o = await env.EPG_BUCKET.get('admin_pass.txt');
+    if (o) {
+      const p = (await o.text()).trim();
+      if (p) return { password: p, isDefault: false, source: 'r2' };
+    }
+  } catch (e) {}
+  if (env.ADMIN_PASSWORD) return { password: env.ADMIN_PASSWORD, isDefault: false, source: 'env' };
+  return { password: DEFAULT_ADMIN_PASSWORD, isDefault: true, source: 'default' };
+}
+
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -451,7 +466,7 @@ input:focus{outline:none;border-color:#2563eb}
   <input type="password" id="pwd" placeholder="管理密码" onkeydown="if(event.key==='Enter')doLogin()">
   <div class="err" id="loginErr"></div>
   <button class="btn-login" onclick="doLogin()">登录</button>
-  <p class="hint">密码为 Worker 变量 ADMIN_PASSWORD（Cloudflare 后台设置，明文可见）。</p>
+  <p class="hint">默认密码 admin，首次登录后请修改。也可以在 Cloudflare 后台设置 ADMIN_PASSWORD 变量。</p>
 </div>
 <div id="mainUI" style="display:none">
   <div class="card"><h3 style="margin:4px 0">当前数据源 <span class="hint" id="cnt"></span></h3><div id="list"></div></div>
@@ -480,7 +495,24 @@ function api(action, extra){
 function doLogin(){
   _pwd = document.getElementById('pwd').value;
   api('get').then(function(d){
-    if(d.ok){ document.getElementById('loginCard').style.display='none'; document.getElementById('mainUI').style.display='block'; _list=d.sources; render(); }
+    if(d.ok){
+      document.getElementById('loginCard').style.display='none';
+      document.getElementById('mainUI').style.display='block';
+      _list=d.sources; render();
+      api('check_default').then(function(c){
+        if(c.ok && c.isDefault){
+          var np = prompt('当前使用默认密码 admin，请设置新密码（至少4位）：');
+          if(np && np.trim().length >= 4){
+            api('change_password',{newPassword:np.trim()}).then(function(r){
+              if(r.ok){ _pwd = np.trim(); alert('密码已修改，请牢记新密码'); }
+              else alert('修改失败：'+(r.error||'未知错误'));
+            });
+          } else if(np !== null){
+            alert('密码至少4位，请稍后在设置中修改');
+          }
+        }
+      });
+    }
     else { var e=document.getElementById('loginErr'); e.textContent=d.error||'登录失败'; e.style.display='block'; }
   });
 }
@@ -770,9 +802,22 @@ export async function handleRequest(req, env) {
     if (p === '/admin/api' && req.method === 'POST') {
       let body = {};
       try { body = await req.json(); } catch (e) { return new Response('bad json', { status: 400 }); }
-      const adminPwd = env.ADMIN_PASSWORD || env.UPDATE_TOKEN;
+      const { password: adminPwd, isDefault } = await getAdminPassword(env);
       if (!adminPwd || body.password !== adminPwd) {
         return new Response(JSON.stringify({ ok: false, error: '密码错误' }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'check_default') {
+        return new Response(JSON.stringify({ ok: true, isDefault }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      if (body.action === 'change_password') {
+        const np = String(body.newPassword || '').trim();
+        if (np.length < 4) {
+          return new Response(JSON.stringify({ ok: false, error: '密码至少4位' }), { headers: { 'Content-Type': 'application/json' } });
+        }
+        await env.EPG_BUCKET.put('admin_pass.txt', np, {
+          httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+        });
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
       }
       if (body.action === 'get') {
         const list = await getSources(env);
