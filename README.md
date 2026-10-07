@@ -227,13 +227,14 @@ docker run -d \
 
 或用 `docker-compose.yml`（已在仓库中，改好密码后 `docker-compose up -d`）。
 
-容器启动后自动抓取一次，之后每天 01:00（北京时间）自动更新。所有接口和 Cloudflare 版一致。数据存在挂载的 `./data` 目录。
+容器启动后自动抓取一次，之后每 4 小时自动更新（与 Cloudflare 版一致）。所有接口和 Cloudflare 版一致。数据存在挂载的 `./data` 目录。
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `ADMIN_PASSWORD` | `changeme` | /admin 管理密码，务必修改 |
 | `DATA_DIR` | `/data` | 数据存储目录 |
 | `PORT` | `8080` | 监听端口 |
+| `UPDATE_CRON` | `240` | 更新间隔（分钟），默认每 4 小时 |
 
 镜像每次 push 到 main 分支时由 GitHub Actions 自动构建并推送到 `ghcr.io/zknjjjx/epg:latest`。
 
