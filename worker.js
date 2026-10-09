@@ -597,7 +597,7 @@ function bjToCron(){
     var hs = byMin[mm].sort(function(a,b){return a-b;}).join(',');
     var cron = mm+' '+hs+' * * *';
     html += '<div class="row"><span class="url" style="font-size:14px;font-weight:700">'+esc(cron)+'</span>'
-      + '<button class="btn-add" onclick="copyCron(\''+cron+'\')">复制</button></div>';
+      + '<button class="btn-add" onclick="copyCron(\\\''+cron+'\\\')">复制</button></div>';
   });
   html += '<p class="hint">去 Cloudflare → Workers → epg-new → 设置 → 触发器 → 添加 Cron 触发器，粘贴上面的表达式。<br>分钟不同的时间需要分别添加多个触发器。</p>';
   out.innerHTML = html;
