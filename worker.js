@@ -481,6 +481,15 @@ input:focus{outline:none;border-color:#2563eb}
     <p class="hint">优先级：1=低（先抓取，易被覆盖），3=高（官方源，后抓取覆盖其他）。gzip 会自动识别（.gz 结尾或 type=gz）。改完点下方保存，GitHub 第二天凌晨自动生效。</p>
   </div>
 
+  <div class="card"><h3 style="margin:4px 0">⏰ 北京时间 → Cron 换算</h3>
+    <p class="hint">输入想要的更新时间（北京时间），自动算出 Cloudflare 触发器用的 UTC cron 表达式。多个时间用逗号或空格分隔。</p>
+    <div style="display:flex;gap:8px;margin:10px 0">
+      <input type="text" id="bjTime" placeholder="如 00:45,07:45" style="flex:1;margin:0">
+      <button class="btn-add" onclick="bjToCron()">换算</button>
+    </div>
+    <div id="cronOut"></div>
+  </div>
+
   <div style="text-align:center;margin:16px 0">
     <button class="btn-save" onclick="triggerUpdate()" style="background:#8b5cf6;margin-bottom:12px">🚀 手动更新节目单</button>
     <div class="okmsg" id="updateOk">已触发更新，约1分钟后生效 ✓</div>
@@ -564,6 +573,41 @@ function saveAll(){
       setTimeout(function(){e.style.display='none';},2000); }
     else { var x=document.getElementById('saveErr'); x.textContent=d.error||'保存失败'; x.style.display='block'; }
   });
+}
+// 北京时间 → Cloudflare Cron(UTC) 换算：纯前端，不碰触发链路
+function bjToCron(){
+  var input = document.getElementById('bjTime').value.trim();
+  var out = document.getElementById('cronOut');
+  if(!input){ out.innerHTML = '<p class="hint">请输入北京时间，如 07:45，或多个时间 00:45,07:45</p>'; return; }
+  var parts = input.split(/[,，\s;；]+/).filter(Boolean);
+  var byMin = {};
+  for(var i=0;i<parts.length;i++){
+    var mt = parts[i].match(/^(\d{1,2}):(\d{2})$/);
+    if(!mt || +mt[1]>23 || +mt[2]>59){
+      out.innerHTML = '<p style="color:#b91c1c;font-size:13px">格式错误：'+esc(parts[i])+'，请用 HH:MM（如 07:45）</p>';
+      return;
+    }
+    var uh = (parseInt(mt[1],10) - 8 + 24) % 24; // 北京时间 UTC+8 → UTC
+    var mm = parseInt(mt[2],10);
+    if(!byMin[mm]) byMin[mm]=[];
+    if(byMin[mm].indexOf(uh)<0) byMin[mm].push(uh);
+  }
+  var html='';
+  Object.keys(byMin).map(Number).sort(function(a,b){return a-b;}).forEach(function(mm){
+    var hs = byMin[mm].sort(function(a,b){return a-b;}).join(',');
+    var cron = mm+' '+hs+' * * *';
+    html += '<div class="row"><span class="url" style="font-size:14px;font-weight:700">'+esc(cron)+'</span>'
+      + '<button class="btn-add" onclick="copyCron(\''+cron+'\')">复制</button></div>';
+  });
+  html += '<p class="hint">去 Cloudflare → Workers → epg-new → 设置 → 触发器 → 添加 Cron 触发器，粘贴上面的表达式。<br>分钟不同的时间需要分别添加多个触发器。</p>';
+  out.innerHTML = html;
+}
+function copyCron(t){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){ alert('已复制：'+t); });
+  } else {
+    prompt('复制下面的 cron 表达式：', t);
+  }
 }
 </script></body></html>`;
 }
