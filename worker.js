@@ -482,12 +482,19 @@ input:focus{outline:none;border-color:#2563eb}
   </div>
 
   <div class="card"><h3 style="margin:4px 0">⏰ 北京时间 → Cron 换算</h3>
-    <p class="hint">输入想要的更新时间（北京时间），自动算出 Cloudflare 触发器用的 UTC cron 表达式。多个时间用逗号或空格分隔。</p>
-    <div style="display:flex;gap:8px;margin:10px 0">
-      <input type="text" id="bjTime" placeholder="如 00:45,07:45" style="flex:1;margin:0">
-      <button class="btn-add" onclick="bjToCron()">换算</button>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0;font-size:13px">
+      <label>每天首次运行 <input type="time" id="firstTime" value="00:45" onchange="calcCron()" style="width:auto;padding:6px 8px;margin:0"></label>
+      <label>每天 <select id="timesPerDay" onchange="calcCron()" class="pri"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="12">12</option></select> 次</label>
     </div>
     <div id="cronOut"></div>
+    <p class="hint" id="customLink">时间不规律？<a href="javascript:void(0)" onclick="document.getElementById('customBox').style.display='block';document.getElementById('customLink').style.display='none'">切换到自定义模式</a></p>
+    <div id="customBox" style="display:none">
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <input type="text" id="bjTime" placeholder="如 00:45,07:45" style="flex:1;margin:0">
+        <button class="btn-add" onclick="bjToCron()">换算</button>
+      </div>
+      <div id="cronOut2"></div>
+    </div>
   </div>
 
   <div style="text-align:center;margin:16px 0">
@@ -524,7 +531,7 @@ function doLogin(){
     if(d.ok){
       document.getElementById('loginCard').style.display='none';
       document.getElementById('mainUI').style.display='block';
-      _list=d.sources; render();
+      _list=d.sources; render(); calcCron();
       api('check_default').then(function(c){
         if(c.ok && c.isDefault){
           var np = prompt('当前使用默认密码 admin，请设置新密码（至少4位）：');
@@ -575,32 +582,56 @@ function saveAll(){
   });
 }
 // 北京时间 → Cloudflare Cron(UTC) 换算：纯前端，不碰触发链路
-function bjToCron(){
-  var input = document.getElementById('bjTime').value.trim();
+// 快捷模式：每天首次运行时间 + 每天次数 → 自动算出全天时间点和 cron
+function calcCron(){
+  var ft = document.getElementById('firstTime').value;
+  var n = parseInt(document.getElementById('timesPerDay').value, 10);
   var out = document.getElementById('cronOut');
-  if(!input){ out.innerHTML = '<p class="hint">请输入北京时间，如 07:45，或多个时间 00:45,07:45</p>'; return; }
-  var parts = input.split(/[,，\s;；]+/).filter(Boolean);
+  if(!ft || !n || n < 1){ out.innerHTML=''; return; }
+  var p0 = ft.split(':');
+  var startMin = parseInt(p0[0],10)*60 + parseInt(p0[1],10);
+  var step = Math.round(1440 / n);
+  var times = [];
+  for(var i=0;i<n;i++) times.push((startMin + i*step) % 1440);
+  renderCron(times, out);
+}
+function renderCron(times, out){
   var byMin = {};
-  for(var i=0;i<parts.length;i++){
-    var mt = parts[i].match(/^(\d{1,2}):(\d{2})$/);
-    if(!mt || +mt[1]>23 || +mt[2]>59){
-      out.innerHTML = '<p style="color:#b91c1c;font-size:13px">格式错误：'+esc(parts[i])+'，请用 HH:MM（如 07:45）</p>';
-      return;
-    }
-    var uh = (parseInt(mt[1],10) - 8 + 24) % 24; // 北京时间 UTC+8 → UTC
-    var mm = parseInt(mt[2],10);
+  times.forEach(function(tm){
+    var uh = (Math.floor(tm/60) - 8 + 24) % 24; // 北京时间 UTC+8 → UTC
+    var mm = tm % 60;
     if(!byMin[mm]) byMin[mm]=[];
     if(byMin[mm].indexOf(uh)<0) byMin[mm].push(uh);
-  }
-  var html='';
+  });
+  var bjList = times.map(function(tm){
+    return ('0'+Math.floor(tm/60)).slice(-2)+':'+('0'+(tm%60)).slice(-2);
+  }).join('、');
+  var html = '<p style="font-size:13px;margin:8px 0">全天 <b>'+times.length+'</b> 次（北京时间）：'+esc(bjList)+'</p>';
   Object.keys(byMin).map(Number).sort(function(a,b){return a-b;}).forEach(function(mm){
     var hs = byMin[mm].sort(function(a,b){return a-b;}).join(',');
     var cron = mm+' '+hs+' * * *';
     html += '<div class="row"><span class="url" style="font-size:14px;font-weight:700">'+esc(cron)+'</span>'
       + '<button class="btn-add" onclick="copyCron(\\\''+cron+'\\\')">复制</button></div>';
   });
-  html += '<p class="hint">去 Cloudflare → Workers → epg-new → 设置 → 触发器 → 添加 Cron 触发器，粘贴上面的表达式。<br>分钟不同的时间需要分别添加多个触发器。</p>';
+  html += '<p class="hint">去 Cloudflare → Workers → epg-new → 设置 → 触发器 → 添加 Cron 触发器，粘贴上面的表达式。</p>';
   out.innerHTML = html;
+}
+// 自定义模式：直接输入多个不规律时间点
+function bjToCron(){
+  var input = document.getElementById('bjTime').value.trim();
+  var out = document.getElementById('cronOut2');
+  if(!input){ out.innerHTML = '<p class="hint">请输入北京时间，如 07:45，或多个时间 00:45,07:45</p>'; return; }
+  var parts = input.split(/[,，\s;；]+/).filter(Boolean);
+  var times = [];
+  for(var i=0;i<parts.length;i++){
+    var mt = parts[i].match(/^(\d{1,2}):(\d{2})$/);
+    if(!mt || +mt[1]>23 || +mt[2]>59){
+      out.innerHTML = '<p style="color:#b91c1c;font-size:13px">格式错误：'+esc(parts[i])+'，请用 HH:MM（如 07:45）</p>';
+      return;
+    }
+    times.push(parseInt(mt[1],10)*60 + parseInt(mt[2],10));
+  }
+  renderCron(times, out);
 }
 function copyCron(t){
   if(navigator.clipboard && navigator.clipboard.writeText){
