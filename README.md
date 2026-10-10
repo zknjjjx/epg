@@ -155,6 +155,7 @@ openssl rand -hex 32
 - **Cron 换算**：设置每天首次运行时间（如 00:45）和每天次数，自动算出全天运行时间点和 Cloudflare 用的 UTC cron 表达式，一键复制
 
 保存后下次定时更新自动生效。gzip 会自动识别（URL 以 `.gz` 结尾或含 `type=gz`）。
+- **备用地址**：URL 里用 `;` 分隔多个地址（如 `https://cdn.example.com/e.xml;https://原地址/e.xml`），按顺序逐个尝试，直到抓成功为止。适合源站不稳定、但有 CDN 镜像的场景。
 
 ### 更新机制
 
