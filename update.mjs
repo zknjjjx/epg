@@ -44,7 +44,10 @@ const SRC = {
   // XMLTV source list: fetched from Worker /sources.txt (env EPG_SOURCES, one per line: name|url|priority)
   // Falls back to builtin list if fetch fails.
   builtin: [
-    ['51zmt', 'https://epg.51zmt.top:8001/e.xml', 1],
+    // 51zmt: primary = direct Cloudflare URL (stable, standard 443 port, reliable from
+    // datacenter IPs); fallback = original :8001 entry (302-redirects to the current file,
+    // keeps working if the CDN filename ever rotates). ';' separates fallback URLs.
+    ['51zmt', 'https://s.102031.xyz/xml/a1999882e.xml;https://epg.51zmt.top:8001/e.xml', 1],
     ['112114', 'https://epg.112114.xyz/pp.xml.gz', 2],
     ['v1mk', 'https://epg.v1.mk/fy.xml', 2],
     ['epgpw', 'https://epg.pw/xmltv/epg_CN.xml', 2],
@@ -272,28 +275,46 @@ async function update() {
     progMap.set(ch + '|' + start, { ch, start, stop, title, src, pri });
   };
 
-  // Generic XMLTV source merger
-  async function mergeXMLTV(srcName, url, isGzip, pri, timeoutMs) {
-    try {
-      const t0 = Date.now();
-      const xml = isGzip ? await fetchGzipText(url, timeoutMs) : await fetchText(url, timeoutMs);
-      const items = parseXMLTV(xml, aliasOf);
-      stat(srcName).fetchMs = Date.now() - t0;
-      stat(srcName).ok = true;
-      const chNames = {};
-      for (const it of items) {
-        if (it.type === 'channel') chNames[it.id] = it.name;
-        else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, srcName, pri);
-      }
-    } catch (e) { stat(srcName).error = e.message; errors.push(srcName + ': ' + e.message); }
+  // One-line error summary with the underlying cause, e.g.
+  // "fetch failed (ECONNREFUSED)" instead of just "fetch failed"
+  function errMsg(e) {
+    const c = e && e.cause;
+    const detail = c && (c.code || c.message);
+    const base = (e && e.message) || String(e);
+    return detail && detail !== base ? `${base} (${detail})` : base;
+  }
+
+  // Generic XMLTV source merger.
+  // url may hold ';'-separated fallback URLs, tried in order until one succeeds
+  // (e.g. direct CDN URL first, original redirect entry as fallback).
+  async function mergeXMLTV(srcName, url, pri, timeoutMs) {
+    const urls = String(url).split(';').map(s => s.trim()).filter(Boolean);
+    const errs = [];
+    for (const u of urls) {
+      try {
+        const t0 = Date.now();
+        const xml = isGzipUrl(u) ? await fetchGzipText(u, timeoutMs) : await fetchText(u, timeoutMs);
+        const items = parseXMLTV(xml, aliasOf);
+        stat(srcName).fetchMs = Date.now() - t0;
+        stat(srcName).ok = true;
+        const chNames = {};
+        for (const it of items) {
+          if (it.type === 'channel') chNames[it.id] = it.name;
+          else putProg(chNames[it.ch] || it.ch, it.start, it.stop, it.title, srcName, pri);
+        }
+        return;
+      } catch (e) { errs.push(`${u}: ${errMsg(e)}`); }
+    }
+    const msg = errs.join(' | ');
+    stat(srcName).error = msg;
+    errors.push(srcName + ': ' + msg);
   }
 
   // 2a-2c. XMLTV sources from Worker config (or builtin fallback), sorted by priority
   const srcList = await loadSources();
   srcList.sort((a, b) => a[2] - b[2]); // low priority first, high priority overwrites
   for (const [sname, surl, spri] of srcList) {
-    const gz = isGzipUrl(surl);
-    await mergeXMLTV(sname, surl, gz, spri, gz ? 180000 : 120000);
+    await mergeXMLTV(sname, surl, spri, 180000);
   }
 
   // 2d. autoEPG official: 3-day + 7-day history
