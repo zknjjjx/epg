@@ -447,6 +447,7 @@ h1{font-size:22px;margin:4px 0 4px}
 select.pri{padding:6px;border:1px solid #d1d5db;border-radius:8px;font-size:13px}
 button{border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;border:none}
 .btn-del{background:#fee2e2;color:#b91c1c}
+.btn-edit{background:#e0e7ff;color:#3730a3}
 .btn-add{background:#2563eb;color:#fff}
 .btn-save{background:#059669;color:#fff;padding:10px 28px;font-size:15px}
 .btn-login{background:#2563eb;color:#fff;padding:10px 28px;font-size:15px;width:100%}
@@ -551,6 +552,7 @@ function render(){
       + '<select class="pri" onchange="setPri('+i+',this.value)">'
       + [1,2,3].map(function(p){return '<option value="'+p+'"'+(p===s.priority?' selected':'')+'>P'+p+'</option>';}).join('')
       + '</select>'
+      + '<button class="btn-edit" onclick="editSrc('+i+')">编辑</button>'
       + '<button class="btn-del" onclick="delSrc('+i+')">删除</button></div>';
   });
   document.getElementById('list').innerHTML = h || '<p class="hint">暂无数据源</p>';
@@ -559,6 +561,14 @@ function render(){
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function setPri(i,v){ _list[i].priority = parseInt(v,10); render(); }
 function delSrc(i){ if(confirm('删除 "'+_list[i].name+'"？')){ _list.splice(i,1); render(); } }
+function editSrc(i){
+  var s=_list[i];
+  var u=prompt('修改 "'+s.name+'" 的 URL：', s.url);
+  if(u===null) return;
+  u=u.trim();
+  if(!u || u.indexOf('http')!==0){ alert('URL 必须以 http 开头'); return; }
+  _list[i].url=u; render();
+}
 function addSrc(){
   var n=document.getElementById('nName').value.trim(), u=document.getElementById('nUrl').value.trim(), p=parseInt(document.getElementById('nPri').value,10);
   if(!u || u.indexOf('http')!==0){ alert('URL 必须以 http 开头'); return; }
