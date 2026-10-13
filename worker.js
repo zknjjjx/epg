@@ -482,6 +482,16 @@ input:focus{outline:none;border-color:#2563eb}
     <p class="hint">优先级：1=低（先抓取，易被覆盖），3=高（官方源，后抓取覆盖其他）。gzip 会自动识别（.gz 结尾或 type=gz）。改完点下方保存，GitHub 第二天凌晨自动生效。</p>
   </div>
 
+  <div class="card"><h3 style="margin:4px 0">🌐 代理设置</h3>
+    <div class="formgrid" style="grid-template-columns:1fr">
+      <input type="text" id="proxyUrl" placeholder="http://192.168.2.1:7890（留空=不使用代理）">
+    </div>
+    <button class="btn-add" onclick="saveProxy()">💾 保存代理</button>
+    <div class="okmsg" id="proxyOk">已保存 ✓（下次更新生效）</div>
+    <div class="err" id="proxyErr"></div>
+    <p class="hint">抓取节目源时走此 HTTP(S) 代理。路由器直连失败的源（如需科学上网的域名）可通过代理抓取。格式：http://host:port，也支持 http://user:pass@host:port。</p>
+  </div>
+
   <div class="card"><h3 style="margin:4px 0">⏰ 北京时间 → Cron 换算</h3>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0;font-size:13px">
       <label>每天首次运行 <input type="time" id="firstTime" value="00:45" onchange="calcCron()" style="width:auto;padding:6px 8px;margin:0"></label>
@@ -524,7 +534,7 @@ function doLogin(){
     if(d.ok){
       document.getElementById('loginCard').style.display='none';
       document.getElementById('mainUI').style.display='block';
-      _list=d.sources; render(); calcCron();
+      _list=d.sources; render(); calcCron(); loadProxy();
       api('check_default').then(function(c){
         if(c.ok && c.isDefault){
           var np = prompt('当前使用默认密码 admin，请设置新密码（至少4位）：');
@@ -561,6 +571,19 @@ function render(){
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function setPri(i,v){ _list[i].priority = parseInt(v,10); render(); }
 function delSrc(i){ if(confirm('删除 "'+_list[i].name+'"？')){ _list.splice(i,1); render(); } }
+function loadProxy(){
+  api('get_settings').then(function(d){
+    if(d.ok && d.settings) document.getElementById('proxyUrl').value = d.settings.proxy || '';
+  });
+}
+function saveProxy(){
+  var u = document.getElementById('proxyUrl').value.trim();
+  api('save_settings',{settings:{proxy:u}}).then(function(d){
+    var ok = document.getElementById('proxyOk'), err = document.getElementById('proxyErr');
+    if(d.ok){ ok.style.display='block'; err.style.display='none'; setTimeout(function(){ok.style.display='none';},2000); }
+    else { err.textContent = d.error || '保存失败'; err.style.display='block'; }
+  });
+}
 function editSrc(i){
   var s=_list[i];
   var u=prompt('修改 "'+s.name+'" 的 URL：', s.url);
@@ -810,7 +833,7 @@ function parseSourceText(text) {
   return out;
 }
 function defaultSources() { return parseSourceText(DEFAULT_SOURCES); }
-const DEFAULT_SETTINGS = { startTime: '01:00', intervalHours: 6 };
+const DEFAULT_SETTINGS = { startTime: '01:00', intervalHours: 6, proxy: '' };
 async function getSettings(env) {
   try {
     const o = await env.EPG_BUCKET.get('settings.json');
@@ -824,6 +847,7 @@ async function getSettings(env) {
       return {
         startTime,
         intervalHours: Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)),
+        proxy: String(s.proxy || '').trim().slice(0, 200),
       };
     }
   } catch (e) { /* fall through */ }
@@ -970,10 +994,15 @@ export async function handleRequest(req, env) {
       }
       if (body.action === 'save_settings') {
         const s = body.settings || {};
+        const cur = await getSettings(env);
+        const proxy = String(s.proxy != null ? s.proxy : cur.proxy || '').trim();
+        if (proxy && !/^https?:\/\/(?:[^@\/\s]+@)?[^\/\s:]+(?::\d+)?$/.test(proxy)) {
+          return new Response(JSON.stringify({ ok: false, error: '代理地址格式不对，应为 http://host:port' }), { headers: { 'Content-Type': 'application/json' } });
+        }
         const settings = {
-          mode: s.mode === 'interval' ? 'interval' : 'daily',
-          dailyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.dailyTime || '') ? s.dailyTime : '01:00',
-          intervalHours: Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)),
+          startTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.startTime || '') ? s.startTime : cur.startTime,
+          intervalHours: s.intervalHours != null ? Math.min(24, Math.max(1, parseInt(s.intervalHours) || 6)) : cur.intervalHours,
+          proxy: proxy.slice(0, 200),
         };
         await env.EPG_BUCKET.put('settings.json', JSON.stringify(settings, null, 2), {
           httpMetadata: { contentType: 'application/json; charset=utf-8' },
