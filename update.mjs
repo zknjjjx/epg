@@ -1,5 +1,6 @@
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { spawn, spawnSync } from 'child_process';
 // ---- Output: R2 via Worker /push, or local disk if OUTPUT_DIR is set (Docker mode) ----
 // GitHub Actions: UPDATE_TOKEN and PUSH_URL from secrets/env
 // Local VM: token from /tmp/epg_update_token.txt
@@ -11,6 +12,24 @@ function getToken() {
   try { return readFileSync('/tmp/epg_update_token.txt', 'utf8').trim(); } catch (e) { return ''; }
 }
 const TOKEN = getToken();
+
+// ---- HTTP proxy (router/local mode): EPG_PROXY=http://host:port or http://user:pass@host:port ----
+// When set, all fetching goes through `curl -x` (CONNECT tunneling, redirects and gzip
+// handled reliably by curl). In local mode the proxy can also come from
+// DATA_DIR/settings.json, which is what /admin writes.
+if (OUTPUT_DIR && !process.env.EPG_PROXY) {
+  try {
+    const sj = JSON.parse(readFileSync(`${OUTPUT_DIR}/settings.json`, 'utf8'));
+    if (sj && sj.proxy) process.env.EPG_PROXY = String(sj.proxy).trim();
+  } catch (e) { /* no settings yet */ }
+}
+let CURL_OK = false;
+if (process.env.EPG_PROXY) {
+  try { CURL_OK = spawnSync('curl', ['--version'], { timeout: 5000 }).status === 0; }
+  catch (e) { CURL_OK = false; }
+  const shown = String(process.env.EPG_PROXY).replace(/:([^:@/]+)@/, ':***@');
+  console.log(CURL_OK ? `  proxy enabled: ${shown}` : '  WARNING: EPG_PROXY is set but curl was not found; proxying will not work');
+}
 async function pushFile(key, body, contentType) {
   const buf = typeof body === 'string' ? Buffer.from(body, 'utf8') : Buffer.from(body);
   if (OUTPUT_DIR) {
@@ -97,15 +116,12 @@ async function loadSources() {
   }
   // 1) R2 sources.json (admin UI)  2) Worker var (sources.txt)  3) builtin
   try {
-    const r = await fetch('https://epg.cc.cd/sources.json', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (r.ok) {
-      const arr = await r.json();
-      const list = (Array.isArray(arr) ? arr : [])
-        .filter(s => s && s.url && String(s.url).startsWith('http'))
-        .map(s => [String(s.name || 'src'), String(s.url), [1, 2, 3].includes(s.priority) ? s.priority : 2]);
-      if (list.length) { console.log(`  sources: loaded ${list.length} from sources.json (admin)`); return list; }
-    }
-  } catch (e) { console.log('  sources.json failed:', e.message); }
+    const arr = JSON.parse(await fetchText('https://epg.cc.cd/sources.json', 15000));
+    const list = (Array.isArray(arr) ? arr : [])
+      .filter(s => s && s.url && String(s.url).startsWith('http'))
+      .map(s => [String(s.name || 'src'), String(s.url), [1, 2, 3].includes(s.priority) ? s.priority : 2]);
+    if (list.length) { console.log(`  sources: loaded ${list.length} from sources.json (admin)`); return list; }
+  } catch (e) { console.log('  sources.json failed:', errMsg(e)); }
   try {
     const t = await fetchText(SOURCES_URL, 15000);
     const list = parseSourceList(t);
@@ -179,6 +195,7 @@ function fmtT(ms) {
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function fetchOnce(url, timeoutMs, asText) {
+  if (process.env.EPG_PROXY && CURL_OK) return curlFetch(url, timeoutMs, asText);
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
@@ -186,6 +203,41 @@ async function fetchOnce(url, timeoutMs, asText) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return asText ? await r.text() : await r.arrayBuffer();
   } finally { clearTimeout(t); }
+}
+
+// Proxy fetch via system curl: handles CONNECT tunneling, redirect chains and
+// gzip content-encoding. -D - prints response headers for every hop to stdout,
+// so the LAST header block determines the final status.
+function curlFetch(url, timeoutMs, asText) {
+  return new Promise((resolve, reject) => {
+    const secs = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const child = spawn('curl', ['-sSL', '--compressed', '--max-time', String(secs),
+      '--connect-timeout', '15', '-x', process.env.EPG_PROXY,
+      '-A', 'Mozilla/5.0', '-D', '-', '-o', '-', url],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = [], err = [];
+    child.stdout.on('data', c => out.push(c));
+    child.stderr.on('data', c => err.push(c));
+    child.on('error', e => reject(new Error('curl spawn failed: ' + e.message)));
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('curl timeout')); }, timeoutMs + 10000);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const msg = Buffer.concat(err).toString('utf8').trim().split('\n').pop().slice(0, 150);
+        return reject(new Error(`curl exit ${code}: ${msg}`));
+      }
+      const buf = Buffer.concat(out);
+      const text = buf.toString('latin1');
+      const idx = text.lastIndexOf('\r\n\r\n');
+      if (idx < 0) return reject(new Error('curl: no response headers'));
+      const lastBlock = text.slice(0, idx).split('\r\n\r\n').pop();
+      const m = /^HTTP\/\S+ (\d{3})/m.exec(lastBlock);
+      const status = m ? parseInt(m[1], 10) : 0;
+      if (status < 200 || status >= 300) return reject(new Error(`HTTP ${status}`));
+      const body = buf.subarray(idx + 4);
+      resolve(asText ? body.toString('utf8') : body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
+    });
+  });
 }
 
 // Retry up to 5 times with exponential backoff — helps with flaky networks
@@ -219,6 +271,22 @@ async function gzipBytes(str) {
   return new Uint8Array(buf);
 }
 
+// Load previous run logs: local file in OUTPUT_DIR (Docker/router) mode,
+// epg.cc.cd/log.json in GitHub Actions mode.
+async function loadLogs() {
+  if (OUTPUT_DIR) {
+    try {
+      const arr = JSON.parse(readFileSync(`${OUTPUT_DIR}/logs.json`, 'utf8'));
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  try {
+    const r = await fetchText('https://epg.cc.cd/log.json', 15000);
+    const arr = JSON.parse(r);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
 // ---- Schedule check: GitHub cron runs hourly; only do real work when due ----
 // Settings from https://epg.cc.cd/settings.json (admin UI), default daily 01:00 Beijing
 async function update() {
@@ -235,7 +303,7 @@ async function update() {
   };
 
   // ---- 1. Channel table (autoEPG official) ----
-  const chTable = await (await fetch(SRC.channels)).json();
+  const chTable = JSON.parse(await fetchText(SRC.channels, 120000));
   const channels = {}; // canonicalId -> {id, name, icon}
   const aliasMap = {}; // normalized alias -> canonicalId
   for (const ch of chTable) {
@@ -445,11 +513,7 @@ async function update() {
       errors,
     };
     try {
-      let logs = [];
-      try {
-        const r = await fetch('https://epg.cc.cd/log.json');
-        if (r.ok) logs = await r.json();
-      } catch (e) { /* fresh */ }
+      let logs = await loadLogs();
       logs.unshift(failLog);
       logs = logs.slice(0, 30);
       await pushFile('logs.json', JSON.stringify(logs), 'application/json; charset=utf-8');
@@ -517,11 +581,7 @@ async function update() {
     })),
     errors,
   };
-  let logs = [];
-  try {
-    const r = await fetch('https://epg.cc.cd/log.json');
-    if (r.ok) logs = await r.json();
-  } catch (e) { /* fresh */ }
+  let logs = await loadLogs();
   logs.unshift(runLog);
   logs = logs.slice(0, 30);
   await pushFile('logs.json', JSON.stringify(logs), 'application/json; charset=utf-8');
