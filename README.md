@@ -156,6 +156,19 @@ openssl rand -hex 32
 
 保存后下次定时更新自动生效。gzip 会自动识别（URL 以 `.gz` 结尾或含 `type=gz`）。
 - **备用地址**：URL 里用 `;` 分隔多个地址（如 `https://cdn.example.com/e.xml;https://原地址/e.xml`），按顺序逐个尝试，直到抓成功为止。适合源站不稳定、但有 CDN 镜像的场景。
+- **代理设置**：/admin 里「🌐 代理设置」可填 HTTP(S) 代理（如 `http://192.168.2.1:7890`，支持 `http://user:pass@host:port`）。本地/Docker/软路由模式下，抓取全部走代理（通过系统 curl 实现 CONNECT 隧道）；Cloudflare + GitHub Actions 模式不受影响（那边直连即可）。
+
+### 软路由 LuCI 插件（iStoreOS，无需 Docker）
+
+不想用 Docker 的话，可以把 EPG 服务装成 LuCI 插件，原生跑在路由器上：
+
+- 安装包：`luci-app-epgserver_1.0.0_aarch64.ipk`（约 36MB，自带 Node.js 20 aarch64，开箱即用）
+- iStoreOS 后台 → 软件包 → 上传安装，或 `opkg install luci-app-epgserver_1.0.0_aarch64.ipk`
+- 装完刷新后台，「服务」菜单出现「EPG节目单」，页面内嵌本机服务（默认 8080 端口）
+- 配置在 `/etc/config/epg-server`：端口、管理密码（默认 changeme，首次登录会提示修改）、更新间隔（分钟）、总开关
+- 服务：`/etc/init.d/epg-server start|stop|restart`，开机自启；数据存在 `/etc/epg-server/data`（断电不丢）
+- 路由器直连失败的源，在设置页「代理设置」里填代理即可
+- 备选：`.ipk` 装不上时可用 `luci-app-epgserver_1.0.0_manual.tar.gz`，解压后跑 `install.sh`
 
 ### 更新机制
 
