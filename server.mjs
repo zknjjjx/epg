@@ -17,6 +17,9 @@ import { handleRequest } from './worker.js';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'data');
 const PORT = parseInt(process.env.PORT || '8080', 10);
+// Node binary for the updater child process; .ipk installs ship their own node
+// outside PATH, so allow override via EPG_NODE.
+const NODE_BIN = process.env.EPG_NODE || 'node';
 mkdirSync(DATA_DIR, { recursive: true });
 
 // ---- R2 shim backed by local disk ----
@@ -81,7 +84,7 @@ function runUpdate() {
   if (updating) { console.log('[updater] already running, skip'); return; }
   updating = true;
   console.log('[updater] starting update...');
-  const child = spawn('node', [join(ROOT, 'update.mjs')], {
+  const child = spawn(NODE_BIN, [join(ROOT, 'update.mjs')], {
     env: { ...process.env, OUTPUT_DIR: DATA_DIR },
     stdio: 'inherit',
   });
